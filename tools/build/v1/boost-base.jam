@@ -218,24 +218,9 @@ rule Link-DLL
     if $(UNIX) 
     {
         LINK_LIBPATH on $(<) = [ join $(gRUN_LD_LIBRARY_PATH($(<))) : $(SPLITPATH) ] ;
-
-        if $(OS) = AIX
-        {
-            Aix-Implib-Action $(<) : $(>) ;
-        }
     }
     
     return [ .do-link $(<) : $(>) : DLL ] ;
-}
-
-rule Aix-Implib-Action
-{
-    SPACE on $(<) = " " ;
-}
-
-actions Aix-Implib-Action bind import-generator-script
-{
-    "$(BOOST_ROOT)/tools/build/v1/gen_aix_import_file.py" $(<[1]:BD=) $(>:D=) "-directory=$(<[1]:D)" -verbose=1
 }
 
 # store the shell's PATH again, just in case someone uses PATH.
@@ -473,6 +458,28 @@ rule get-values
     return $(_properties:G=) ;
 }
 
+rule replace-properties ( property-set * : new-properties * )
+{
+    local result = ;
+    for local x in $(property-set)
+    {
+        if $(x:G) in $(new-properties:G)
+        {
+            if ! $(x:G) in $(result:G)
+            {
+                result += [ get-properties $(x:G) : $(new-properties) ] ;
+            }
+            
+        }
+        else
+        {
+            result += $(x) ;
+        }
+    }
+    return $(result) ;
+}
+
+
 # normalize-properties properties
 #
 # Normalizes a set of (possibly qualified) properties by prepending <*> as many
@@ -489,6 +496,14 @@ rule normalize-properties
             case <*><tag>* : result += <*>$(property) ;
             case <tag>* : result += <*><*>$(property) ;
             
+            case <*><*><*><default>* : result += $(property) ;
+            case <*><*><default><*>* : result += <*>$(property) ;
+            case <*><*><default>* : result += $(property) ;
+            case <*><default><*>* : result += <*><*>$(property) ;
+            case <*><default>* : result += <*>$(property) ;
+            case <default><*>* : result += <*><*><*>$(property) ;
+            case <default>* : result += <*><*>$(property) ;
+                        
             case <*><*><*><*@*>* : result += $(property) ;
             case <*><*><*@*>* : result += <*>$(property) ;
             case <*><*@*>* : result += <*><*>$(property) ;
@@ -1086,13 +1101,11 @@ rule segregate-overrides
     $(>) = [ get-properties $(kept-features) : $($(>)) ] ;
 }
 
-# report-free-property-conflicts free-property... : target
-#
 # If any single-valued free-feature appears more than once in free-property...,
 # exit with an appropriate error message.
-rule report-free-property-conflicts
+rule report-free-property-conflicts ( free-property * : target + )
 {
-    local p = [ get-properties $(gSINGLE_VALUED_FREE_FEATURES) $(<) ] ;
+    local p = [ get-properties $(gSINGLE_VALUED_FREE_FEATURES) : $(free-property) ] ;
     local f = [ unique $(p:G) ] ;
     if $(p:G) != $(f)
     {
@@ -1101,28 +1114,22 @@ rule report-free-property-conflicts
     }
 }
 
-# expand-build-request
-#      toolset variant target-name : requirements : build-request
-#
 # Returns a list of path-property-sets (see make-path-property-sets above) for
 # all build configurations based on the given toolset, requirements, and
 # build-request. Target-name is just used for error reporting.
-rule expand-build-request 
+rule expand-build-request ( toolset variant target : raw-requirements * : raw-build-request * )
 {
-    local toolset = $(<[1]) ;
-    local variant = $(<[2]) ;
-
     # grab the requirements and BUILD-request relevant to this toolset and variant
-    local requirements = [ select-properties $(toolset) $(variant) : $(>) ] ;
-    local build-request = [ select-properties $(toolset) $(variant) : $(3) ] ;
+    local requirements = [ select-properties $(toolset) $(variant) : $(raw-requirements) ] ;
+    local build-request = [ select-properties $(toolset) $(variant) : $(raw-build-request) ] ;
 
     # Separate the free features (e.g. <define>, <undef>, <include>) from the others
     local free-properties = [ segregate-free-properties requirements build-request ] ;
 
     # Check for conflicts
-    report-free-property-conflicts $(free-properties) : $(<[3]) ;
+    report-free-property-conflicts $(free-properties) : $(target) ;
     build-request = [ remove-incompatible-builds $(requirements)
-      : $(build-request) : $(<[3]) ] ;
+      : $(build-request) : $(target) ] ;
 
     if $(build-request) != SKIP
     {
@@ -1144,6 +1151,7 @@ rule expand-build-request
                                    ] ;
         
         local defaulted-properties = [ feature-default $(defaulted-features) ] ;
+        
         # VP: defaulted-properties have the form <feature>value and there's 1 value.
         # Hence, each element of defaulted-properties will be part of each
         # component of override-sets and will be a part of each property-set 
@@ -1151,6 +1159,28 @@ rule expand-build-request
         # way: free properties does not show up in target path.
         local defaulted-free-properties = [ segregate-free-properties defaulted-properties ] ;
 
+        #
+        # Allow <default> properties and rules to take effect.
+        #
+        local default-requirements = [ get-values <default> : $(free-properties) ] ;
+        
+        defaulted-properties = [ replace-properties $(defaulted-properties)
+                                : [ select-gristed $(default-requirements) ] ] ;
+        
+        local non-defaults =  $(requirements) $(build-request) $(free-properties) ;
+
+        for local r in [ select-ungristed $(default-requirements) ]
+        {
+            local x = [ $(r) $(toolset) $(variant) : $(non-defaults) ] ;
+            # ECHO  $(r) yields $(x) ;
+            # ECHO defaulted-properties= $(defaulted-properties) ;
+            defaulted-properties = [ 
+              replace-properties $(defaulted-properties) : $(x) ] ;
+        }
+        
+        # In case any defaults should conflict with the requirements,
+        # force them to match up.
+        defaulted-properties = [ replace-properties $(defaulted-properties) : $(requirements) ] ;
 
         # form override property sets of the form (property1[/property2...] )+,
         # sorted in feature order. These represent the properties of subvariants
@@ -1283,9 +1313,8 @@ rule expand-target-names ( targets + : target-type )
 # RETURNS: the a list of target names for the files built by the target.
 rule declare-local-target ( target : sources * : requirements * : default-build * : target-type )
 {
-    # We expand out the name of the target and sources
+    # We expand out the name of the target
     local x-target = [ expand-target-names $(target) : $(target-type) ] ;
-    local x-sources = [ expand-source-names $(sources) ] ;
 
     # We add SOURCE_GRIST the base target name here because we're referring the
     # abstract  target which generates all of the actual builds. We need a way to
@@ -1297,6 +1326,45 @@ rule declare-local-target ( target : sources * : requirements * : default-build 
         EXIT No target type given for "$(x-target)" ;
     }
 
+    # Define the specifications of the target.
+    gTARGET_NAME($(target-id)) = $(target) ;
+
+    # Declare the basic target.
+    declare-basic-target $(target-id) : $(sources) : $(requirements) : $(default-build) : $(target-type) ;
+
+    # Generate build instructions, but only if the target has a generator.
+    #
+    if $(gGENERATOR_FUNCTION($(gTARGET_TYPE($(target-id)))))
+    {
+        # Supress the regular build of this target
+        local suppress = [ get-values <suppress> : $(default-build) ] ;
+        local gSUPPRESS_FAKE_TARGETS = $(suppress[1]) ;
+
+        declare-fake-targets $(target) : $(target-id) ;
+
+        # Just gather information if we are including a library's Jamfile for a
+        # dependent target. Don't generate build instructions here.
+        if ! $(gIN_LIB_INCLUDE)
+        {
+            main-target $(target-id) : $(gTARGET_DEFAULT_BUILD($(target-id))) ;
+        }
+    }
+
+    return $(gTARGET_FILES($(target-id))) ;
+}
+
+# declare-basic-target target-id : sources : requirements : local-BUILD : target-type
+#
+# Declares a basic target for the given target-id and target-type.
+# All target generation should go through here to ensure all vars are set
+# for the targets.
+#
+# WARNING: This only declares, no build instructions are generated here.
+rule declare-basic-target ( target-id : sources * : requirements * : default-build * : target-type )
+{
+    # We expand out the name of the sources
+    local x-sources = [ expand-source-names $(sources) ] ;
+
     # Define the specifications of the target, but only if we haven't already.
     #
     if ! $(gTARGET_TYPE($(target-id)))
@@ -1304,7 +1372,6 @@ rule declare-local-target ( target : sources * : requirements * : default-build 
         # Save basic information about the target.
         #
         gTARGET_TYPE($(target-id)) = $(target-type) ;
-        gTARGET_NAME($(target-id)) = $(target) ;
 
         # Add the specified requirements to any requirements given by the target
         # type, and the corresponding <target-type> property.
@@ -1360,26 +1427,6 @@ rule declare-local-target ( target : sources * : requirements * : default-build 
         EXIT conflicting target types for "$(x-target)":
         "$(gTARGET_TYPE($(target-id)))" "$(target-type)" ;
     }
-
-    # Generate build instructions, but only if the target has a generator.
-    #
-    if $(gGENERATOR_FUNCTION($(gTARGET_TYPE($(target-id)))))
-    {
-        # Supress the regular build of this target
-        local suppress = [ get-values <suppress> : $(default-build) ] ;
-        local gSUPPRESS_FAKE_TARGETS = $(suppress[1]) ;
-
-        declare-fake-targets $(target) : $(target-id) ;
-
-        # Just gather information if we are including a library's Jamfile for a
-        # dependent target. Don't generate build instructions here.
-        if ! $(gIN_LIB_INCLUDE)
-        {
-            main-target $(target-id) : $(gTARGET_DEFAULT_BUILD($(target-id))) ;
-        }
-    }
-
-    return $(gTARGET_FILES($(target-id))) ;
 }
 
 # directory-of files...
@@ -1818,8 +1865,11 @@ rule subvariant-target ( main-target : subvariant-id build-properties * : toolse
 
   # The renamed base name of the target. Only considers the tags defined directly
   # on the target.
-  gTARGET_BASENAME($(main-target)) =
-    [ rename-target $(gTARGET_NAME($(main-target))) : [ split-path [ ungrist $(subvariant:G) ] ] : $(property-tags) ] ;
+  if $(gTARGET_NAME($(main-target)))
+  {
+    gTARGET_BASENAME($(main-target)) =
+      [ rename-target $(gTARGET_NAME($(main-target))) : [ split-path [ ungrist $(subvariant:G) ] ] : $(property-tags) ] ;
+  }
 
   # First order names have the suffix, if any according to the platform.
   local target-files = [ FAppendSuffix $(subvariant) : $(SUF$(target-type)) ] ;
@@ -2034,69 +2084,61 @@ rule unit-test ( target +  : sources + : requirements * : default-build * : cmd-
 }
 
 # Used to build command files from a list of sources.
-rule build-command-file ( command : sources * )
+rule build-command-file ( command : sources * : prefix ? line-break ? )
 {
     # Clean up after ourselves
     Clean clean : $(command) ;
     
     DEPENDS $(command) : $(sources) ;
     
+    PREFIX on $(command) = $(prefix:E=) ;
+    
+    local ' _  = "" ;
+    
+    if ! $(NT)
+    {
+        ' = ' ;
+        _ = " " ;
+    }
+        
+    ' on $(command) = $(') ;
+    _ on $(command) = $(_) ;
+    
+    EOL on $(command) = \"$(line-break:E=)$(')$(_)>>$(_)\" ;
+    BOL on $(command) = "\"
+echo $(')$(prefix:E=)\"" ;
+    
     # Check whether there's anything to dump, so that we don't end up
     # executing a line of the form:
     #
-    #    echo > file.CMD
+    #    echo >> file.CMD
     #
     # on Windows this writes "echo is on." into the command-file,
     # which then breaks the link.
     
-    if $(sources[1])
+    if $(sources)
     {
         # Handle the first target specially, so that the first source file
         # will clear the command file
-        command-file-dump-1st $(command) : $(sources[1]) ;
+        command-file-dump $(command) : $(sources) ;
     }    
-    
-    if $(sources[2])
-    {
-        # Then fill the rest up piecemeal
-        command-file-dump-rest $(command) : $(sources[2-]) ;
-    }
 }
 
-# command-file-dump-1st: dump the first source path into the target
+# Quietly delete $(x) if it exists with $(RM1)"$(x)"  
 if $(NT)
 {
-# the windows command shell has the anyoing effect of appending whitespace
-# when redirecting with > and >>
-    actions quietly command-file-dump-1st
-    {
-        echo "$(>)">"$(<)"
-    }
+    RM1 = "IF EXIST " "DEL " ;
 }
 else
 {
-    actions quietly command-file-dump-1st
-    {
-        echo "$(>)" > "$(<)"
-    }
+    RM1 = "$(RM) " ;
 }
 
-# command-file-dump: dump the remaining source paths into the target
-if $(NT)
+# Build the command-file
+actions quietly command-file-dump
 {
-# the windows command shell has the anyoing effect of appending whitespace
-# when redirecting with > and >>
-    actions quietly piecemeal command-file-dump-rest
-    {
-        echo "$(>)">>"$(<)"
-    }
-}
-else
-{
-    actions quietly piecemeal command-file-dump-rest
-    {
-        echo "$(>)" >> "$(<)"
-    }
+    $(RM1)"$(<)"
+    echo $(')$(PREFIX)"$(>:J=$(EOL)$(<)$(BOL))"$(')$(_)>>$(_)$(<)
 }
 
 # Clean up the temporary COMMAND-FILE used to build TARGETS.
@@ -2113,13 +2155,13 @@ actions ignore quietly piecemeal together remove-command-file
 # build TARGETS from SOURCES using a command-file, where RULE-NAME is
 # used to generate the build instructions from the command-file to
 # TARGETS
-rule with-command-file ( rule-name targets * : sources * )
+rule with-command-file ( rule-name targets * : sources * : prefix ? line-break ? )
 {
     # create a command-file target and place it where the first target
     # will be built
     local command-file = $(targets[1]:S=.CMD) ;
     LOCATE on $(command-file) = $(gLOCATE($(targets[1]))) ;
-    build-command-file $(command-file) : $(sources) ;
+    build-command-file $(command-file) : $(sources) : $(prefix) $(line-break) ;
 
     # Build the targets from the command-file instead of the sources
     DEPENDS $(targets) : $(command-file) ;
@@ -2528,12 +2570,25 @@ rule common-variant-tag ( toolset variant : properties * )
     {
         case *borland* : toolset-tag += bcb ;
         case *como* : toolset-tag += como ;
-        case *cwpro8* : toolset-tag += cw8 ;
+        case *cwpro8* :
+        {
+            toolset-tag += cw8 ;
+            if <runtime-link>dynamic in $(properties) { thread-tag = mt ; }
+        }
+        case *cwpro9* :
+        {
+            toolset-tag += cw9 ;
+            if <runtime-link>dynamic in $(properties) { thread-tag = mt ; }
+        }
         case *darwin* : toolset-tag += ;
         case *edg* : toolset-tag += edg ;
         case *gcc* : toolset-tag += gcc ;
         case *intel-linux* : toolset-tag += il ;
-        case *intel-win32* : toolset-tag += iw ;
+        case *intel-win32* :
+        {
+            toolset-tag += iw ;
+            if <runtime-link>dynamic in $(properties) { thread-tag = mt ; }
+        }
         case *kcc* : toolset-tag += kcc ;
         case *kylix* : toolset-tag += bck ;
         case *metrowerks* : toolset-tag += cw ;
