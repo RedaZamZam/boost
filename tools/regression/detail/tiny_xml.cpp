@@ -8,7 +8,6 @@
 
 #include "tiny_xml.hpp"
 #include <cassert>
-#include <cstring>
 
 namespace
 {
@@ -28,8 +27,7 @@ namespace
       != 0 )
     {
       result += c;
-      if(!in.get( c ))
-        throw std::string("xml: unexpected eof");
+      in.get( c );
     }
     return result;
   }
@@ -70,11 +68,8 @@ namespace boost
       char c = 0;  // current character
       element_ptr e( new element );
 
-      if(!in.get( c ))
-        throw std::string("xml: unexpected eof");
-      if ( c == '<' )
-        if(!in.get( c ))
-          throw std::string("xml: unexpected eof");
+      in.get( c );
+      if ( c == '<' ) in.get( c );
 
       e->name = get_name( c, in );
       eat_whitespace( c, in );
@@ -93,9 +88,7 @@ namespace boost
         e->attributes.push_back( a );
         eat_whitespace( c, in );
       }
-      if(!in.get( c )) // next after '>'
-        throw std::string("xml: unexpected eof");
-
+      in.get( c ); // next after '>'
       eat_whitespace( c, in );
 
       // sub-elements
@@ -114,14 +107,12 @@ namespace boost
         while ( c != '<' )
         {
           e->content += c;
-          if(!in.get( c ))
-            throw std::string("xml: unexpected eof");
+          in.get( c );
         }
       }
 
       assert( c == '<' );
-      if(!in.get( c )) // next after '<'
-        throw std::string("xml: unexpected eof");
+      in.get( c ); // next after '<'
 
       eat_delim( c, in, '/', msg );
       std::string end_name( get_name( c, in ) );

@@ -17,16 +17,13 @@ DEPENDS all : test ;
 #  Please keep these in alphabetic order by test-suite name
 
 subinclude libs/bind/test ;              # test-suite bind
-subinclude libs/conversion/test ;        # test-suite conversion
 subinclude libs/date_time/test ;         # test-suite date_time
 subinclude libs/filesystem/test ;        # test-suite filesystem
 subinclude libs/format/test ;            # test-suite format
 subinclude libs/function/test ;          # test-suite function
-subinclude libs/iterator/test ;          # test-suite iterator
 subinclude libs/math/test ;              # test-suite math
 subinclude libs/numeric/interval/test ;  # test-suite interval
 subinclude libs/optional/test ;          # test-suite optional
-subinclude libs/random/test ;            # test-suite random
 subinclude libs/regex/test ;             # test-suite regex
 subinclude libs/regex/example ;          # test-suite regex-examples
 subinclude libs/signals/test ;           # test-suite signals
@@ -34,8 +31,6 @@ subinclude libs/smart_ptr/test ;         # test-suite smart_ptr
 subinclude libs/static_assert ;          # test-suite static_assert
 subinclude libs/thread/test ;            # test-suite thread
 subinclude libs/type_traits/test ;       # test-suite type_traits
-subinclude libs/utility/test ;           # test-suite utility
-subinclude libs/variant/test ;           # test-suite variant
  
 
 # Tests specified in this Jamfile
@@ -48,7 +43,7 @@ subinclude libs/variant/test ;           # test-suite variant
                 : #args
                 : #input-files
                 : #requirements
-                <threading>multi <no-warn>config_test.cpp
+                <threading>multi
           ]
            [ run libs/config/test/config_info.cpp : : : <test-info>always_show_run_output ]
            [ run libs/config/test/limits_test.cpp <lib>../libs/test/build/boost_test_exec_monitor ]
@@ -69,6 +64,11 @@ subinclude libs/variant/test ;           # test-suite variant
           [ compile libs/concept_check/class_concept_check_test.cpp ]
           [ compile-fail libs/concept_check/concept_check_fail_expected.cpp ]
           [ compile-fail libs/concept_check/class_concept_fail_expected.cpp ]
+        ;
+
+    test-suite conversion
+        : [ run libs/conversion/cast_test.cpp ]
+          [ run libs/conversion/lexical_cast_test.cpp ]
         ;
 
     run libs/crc/crc_test.cpp <lib>../libs/test/build/boost_test_exec_monitor ;
@@ -108,7 +108,7 @@ subinclude libs/variant/test ;           # test-suite variant
           [ run libs/lambda/test/bind_tests_advanced.cpp <lib>../libs/test/build/boost_test_exec_monitor ]
           [ run libs/lambda/test/bind_tests_simple_f_refs.cpp <lib>../libs/test/build/boost_test_exec_monitor ]
           [ run libs/lambda/test/bll_and_function.cpp <lib>../libs/test/build/boost_test_exec_monitor ]
-          [ run libs/lambda/test/cast_test.cpp <lib>../libs/test/build/boost_test_exec_monitor : : : : lambda_cast_test ]
+          [ run libs/lambda/test/cast_test.cpp <lib>../libs/test/build/boost_test_exec_monitor ]
           [ run libs/lambda/test/constructor_tests.cpp <lib>../libs/test/build/boost_test_exec_monitor ]
           [ run libs/lambda/test/control_structures.cpp <lib>../libs/test/build/boost_test_exec_monitor ]
           [ run libs/lambda/test/exception_test.cpp <lib>../libs/test/build/boost_test_exec_monitor ]
@@ -148,6 +148,11 @@ subinclude libs/variant/test ;           # test-suite variant
           [ run libs/rational/rational_test.cpp ]
         ;
 
+    test-suite random
+        : [ run libs/random/random_test.cpp  <lib>../libs/test/build/boost_test_exec_monitor ]
+          [ run libs/random/random_demo.cpp ]
+        ;
+
     subinclude libs/test/test ;
     
     compile libs/timer/timer_test.cpp ;
@@ -165,6 +170,34 @@ subinclude libs/variant/test ;           # test-suite variant
         : [ run libs/tuple/test/tuple_test_bench.cpp <lib>../libs/test/build/boost_test_exec_monitor ]
           [ run libs/tuple/test/io_test.cpp <lib>../libs/test/build/boost_test_exec_monitor ]
     ;
+
+
+    test-suite iterator_adaptors
+        : [ run libs/utility/counting_iterator_test.cpp : # args
+            : # input files
+            : # requirements
+
+            # borland warns incorrectly in this case, so often that
+            # successful compilation is prevented.
+            <borland><*><cxxflags>"-w-8091 -w-8092"
+          ]
+
+          [ run libs/utility/iterator_adaptor_test.cpp ]
+          [ compile-fail libs/utility/iter_adaptor_fail_expected1.cpp ]
+          [ compile-fail libs/utility/iter_adaptor_fail_expected2.cpp ]
+          [ run libs/utility/transform_iterator_test.cpp ]
+          [ run libs/utility/indirect_iterator_test.cpp ]
+          [ run libs/utility/iter_traits_gen_test.cpp ]
+
+          [ run libs/utility/iterator_adaptor_examples.cpp ]
+          [ run libs/utility/counting_iterator_example.cpp ]
+          [ run libs/utility/filter_iterator_example.cpp ]
+          [ run libs/utility/fun_out_iter_example.cpp ]
+          [ run libs/utility/indirect_iterator_example.cpp ]
+          [ run libs/utility/projection_iterator_example.cpp ]
+          [ run libs/utility/reverse_iterator_example.cpp ]
+          [ run libs/utility/transform_iterator_example.cpp ]
+        ;
 
     test-suite ublas
         : [ run libs/numeric/ublas/test1/test1.cpp
@@ -264,7 +297,6 @@ subinclude libs/variant/test ;           # test-suite variant
           [ run libs/multi_array/test/range1.cpp <lib>../libs/test/build/boost_test_exec_monitor  ]
           [ run libs/multi_array/test/idxgen1.cpp <lib>../libs/test/build/boost_test_exec_monitor ]
           [ run libs/multi_array/test/stl_interaction.cpp <lib>../libs/test/build/boost_test_exec_monitor ]
-          [ run libs/multi_array/test/resize.cpp <lib>../libs/test/build/boost_test_exec_monitor ]
           [ compile libs/multi_array/test/concept_checks.cpp ]
           [ compile-fail libs/multi_array/test/fail_cbracket.cpp ]
           [ compile-fail libs/multi_array/test/fail_cdata.cpp ]
@@ -289,6 +321,23 @@ subinclude libs/variant/test ;           # test-suite variant
           [ compile-fail libs/multi_array/test/fail_ref_cview2.cpp ]
           [ compile-fail libs/multi_array/test/fail_ref_cview3.cpp ]
         ;
+
+    test-suite utility
+        : 
+            [ run libs/utility/iterator_traits_test.cpp ]
+            [ run libs/utility/iterators_test.cpp <lib>../libs/test/build/boost_test_exec_monitor ]
+            [ compile-fail libs/utility/noncopyable_test.cpp ]
+            [ run libs/utility/numeric_traits_test.cpp ]
+            [ run libs/utility/operators_test.cpp <lib>../libs/test/build/boost_test_exec_monitor ]
+            [ run libs/utility/tie_example.cpp ]
+            [ run libs/utility/binary_search_test.cpp <lib>../libs/test/build/boost_test_exec_monitor ]
+            [ run libs/utility/call_traits_test.cpp : -u ]
+            [ compile-fail libs/utility/checked_delete_test.cpp ]
+            [ run libs/utility/compressed_pair_test.cpp <lib>../libs/test/build/boost_test_exec_monitor : -u ]
+            [ run libs/utility/addressof_test.cpp <lib>../libs/test/build/boost_test_exec_monitor ]
+            [ run libs/utility/ref_test.cpp <lib>../libs/test/build/boost_test_exec_monitor ]
+        ;
+
 }
 
 
