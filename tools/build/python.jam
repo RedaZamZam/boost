@@ -6,12 +6,12 @@ gPYTHON_INCLUDED = true ;
 if $(NT)
 {
     CATENATE = type ;
-    PYTHON_VERSION ?= 2.1 ;
+    PYTHON_VERSION ?= 2.2 ;
 }
 else if $(UNIX)
 {
     CATENATE = cat ;
-    PYTHON_VERSION ?= 1.5 ;
+    PYTHON_VERSION ?= 2.2 ;
 }
 
 # Strip the dot from the Python version in order to be able to name
@@ -25,6 +25,7 @@ local RUN_PATH = $(RUN_PATH) ;
 
 # Decide which toolsets should be treated like an ordinary (unix) GCC installation
 gcc-compilers = [ MATCH ^(gcc.*)$ : $(TOOLS) ] ;
+mingw-compilers = [ MATCH ^(mingw.*)$ : $(TOOLS) ] ;
 gcc-compilers = [ difference $(gcc-compilers) : gcc-nocygwin ] ;
 
 if $(NT)
@@ -106,7 +107,7 @@ rule select-python-library ( toolset variant : properties * )
 {
     if $(NT) 
     {
-        if $(toolset) = mingw
+        if $(toolset) in $(mingw-compilers)
         {
             local lib = python$(PYTHON_VERSION_NODOT) ;
             if <define>BOOST_DEBUG_PYTHON in $(properties)
@@ -195,7 +196,6 @@ BOOST_PYTHON_V2_PROPERTIES
       <cwpro8><*><cxxflags>"-inline deferred"  # added for internal testing purposes
         <cxx><*><sysinclude>$(BOOST_ROOT)/boost/compatibility/cpp_c_headers
          <define>BOOST_PYTHON_DYNAMIC_LIB
-           <define>BOOST_PYTHON_V2
       ;
 
 # Extends the RUN_PATH assignment for targets built under Cygwin so
@@ -296,7 +296,7 @@ gIS_DEPENDENCY(PYD) = TRUE ;
 # Declare a python extension.
 rule extension ( name : sources + : requirements * : default-BUILD * )
 {
-    requirements += $(PYTHON_PROPERTIES) ;
+    requirements += $(BOOST_PYTHON_V2_PROPERTIES) ;
     
 
     declare-local-target $(name) : $(sources) : $(requirements) : $(default-BUILD) : PYD ;
@@ -317,7 +317,7 @@ rule boost-python-runtest (
     local gPYTHON_TEST_ARGS = $(args) $(PYTHON_TEST_ARGS) ;
 
     # declare the two subsidiary tests.
-    declare-local-target $(<) : $(>) : $(PYTHON_PROPERTIES) : $(4) : PYTHON_TEST ;
+    declare-local-target $(<) : $(>) : $(BOOST_PYTHON_V2_PROPERTIES) : $(4) : PYTHON_TEST ;
     declare-local-target $(<) : $(>) : $(PYTHON_PROPERTIES) : $(4) <suppress>true : PYTHON_RUNTEST ;
 }
 
@@ -338,6 +338,10 @@ rule python-test-target ( test-target : sources + )
     type-DEPENDS test : $(test-target) ;
     MakeLocate $(test-target) : $(LOCATE_TARGET) ;
     MakeLocate $(test-target) : $(LOCATE_TARGET) ;
+    if $(RUN_ALL_TESTS) 
+    {
+        ALWAYS $(test-target) ;
+    }
 }
 
 if $(UNIX)
@@ -358,7 +362,7 @@ actions python-test-target bind PYTHON
     $(SHELL_EXPORT)$(gSHELL_LIBPATH)
     $(SHELL_SET)PYTHONPATH=$(PYTHONPATH)
     $(SHELL_EXPORT)PYTHONPATH
-    $(PYTHON_LAUNCH) $(PYTHON) $(PYTHON_ARGS) "$(>)" $(ARGS) 2>&1 "$(<)" || $(CATENATE) "$(<)"
+    $(PYTHON_LAUNCH) $(PYTHON) $(PYTHON_ARGS) "$(>)" $(ARGS)
 }
 
 SUFPYTHON_RUNTEST = .run ;
