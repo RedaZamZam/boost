@@ -54,14 +54,6 @@
         padding: 0.5pc 0.5pc 0.5pc 0.5pc;
     }
 
-    /* Program listings in tables don't get borders */
-    td .programlisting, 
-    td .screen
-    {
-        margin: 0pc 0pc 0pc 0pc;
-        padding:  0pc 0pc 0pc 0pc;
-    }
-
 /*=============================================================================
     Headings
 =============================================================================*/
@@ -274,8 +266,6 @@
     Variable Lists
 =============================================================================*/
 
-    /* Make the terms in definition lists bold */
-    div.variablelist dl dt,
     span.term
     {
         font-weight: bold;
@@ -288,26 +278,24 @@
         vertical-align: top;
         padding: 0em 2em 0em 0em;
         font-size: 10pt;
-        margin: 0em 0em 0.5em 0em;
-        line-height: 1;
     }
 
+    div.variablelist table tbody tr td p
+    {
+        margin: 0em 0em 0.5em 0em;
+    }
+
+    /* Make the terms in definition lists bold */
     div.variablelist dl dt
     {
-        margin-bottom: 0.2em;
+        font-weight: bold;
+        font-size: 10pt;
     }
 
     div.variablelist dl dd
     {
-        margin: 0em 0em 0.5em 2em;
+        margin: 1em 0em 1em 2em;
         font-size: 10pt;
-    }
-
-    div.variablelist table tbody tr td p,
-    div.variablelist dl dd p
-    {
-        margin: 0em 0em 0.5em 0em;
-        line-height: 1;
     }
 
 /*=============================================================================
@@ -397,12 +385,6 @@
             border: 1px solid #DCDCDC;
         }
     
-        td .programlisting, 
-        td .screen
-        {
-            border: 0px solid #DCDCDC;
-        }
-    
     /* Blurbs */
         div.note,
         div.tip,
@@ -469,12 +451,6 @@
         .screen
         {
             border: 1px solid gray;
-        }
-    
-        td .programlisting, 
-        td .screen
-        {
-            border: 0px solid #DCDCDC;
         }
     
     /* Table of contents */
