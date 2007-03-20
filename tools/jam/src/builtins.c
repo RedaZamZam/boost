@@ -937,6 +937,17 @@ static void add_hash_key( void* np, void* result_ )
     *result = list_new( *result, copystr( *(char**)np ) );
 }
 
+static struct hash *get_running_module_vars()
+{
+    struct hash *dummy, *vars = NULL;
+    /* Get the global variables pointer (that of the currently running module) */
+    var_hash_swap(&vars);
+    dummy = vars;
+    /* Put the global variables pointer in its right place */
+    var_hash_swap(&dummy);
+    return vars;
+}
+
 LIST *
 builtin_varnames(
     PARSE   *parse,
@@ -946,8 +957,14 @@ builtin_varnames(
     LIST *result = L0;
     module_t* source_module = bindmodule( arg0 ? arg0->string : 0 );
 
-    if ( source_module->variables )
-        hashenumerate( source_module->variables, add_hash_key, &result );
+    /* The running module _always_ has its 'variables' member set to NULL
+     * due to the way enter_module and var_hash_swap work */
+    struct hash *vars = 
+        source_module == frame->module ? 
+            get_running_module_vars() : source_module->variables;
+
+    if ( vars )
+        hashenumerate( vars, add_hash_key, &result );
     return result;
 }
 
@@ -1621,7 +1638,13 @@ bjam_call(PyObject* self, PyObject* args)
                 {
                     /* PySequence_GetItem returns new reference. */
                     PyObject* e = PySequence_GetItem(a, i);
-                    l = list_new(l, newstr(PyString_AsString(e)));
+                    char* s = PyString_AsString(e);
+                    if (!s)
+                    {
+                        printf("Invalid parameter type passed from Python\n");
+                        exit(1);
+                    }
+                    l = list_new(l, newstr(s));
                     Py_DECREF(e);
                 }
                 lol_add(inner->args, l);
@@ -1632,6 +1655,8 @@ bjam_call(PyObject* self, PyObject* args)
     result = evaluate_rule( rulename, inner );
 
     frame_free( inner );
+
+    return Py_None;
 }
 
 /** Accepts three arguments: module name, rule name and Python callable.
