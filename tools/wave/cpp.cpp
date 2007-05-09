@@ -3,7 +3,7 @@
 
     http://www.boost.org/
 
-    Copyright (c) 2001-2006 Hartmut Kaiser. Distributed under the Boost
+    Copyright (c) 2001-2007 Hartmut Kaiser. Distributed under the Boost
     Software License, Version 1.0. (See accompanying file
     LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
 =============================================================================*/
@@ -77,6 +77,7 @@ using std::pair;
 using std::vector;
 using std::getline;
 using std::ifstream;
+using std::ofstream;
 using std::cout;
 using std::cerr;
 using std::endl;
@@ -132,7 +133,7 @@ int print_copyright()
         "Wave: A Standard conformant C++ preprocessor based on the Boost.Wave library",
         "http://www.boost.org/",
         "",
-        "Copyright (c) 2001-2006 Hartmut Kaiser, Distributed under the Boost",
+        "Copyright (c) 2001-2007 Hartmut Kaiser, Distributed under the Boost",
         "Software License, Version 1.0. (See accompanying file",
         "LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)",
         0
@@ -154,7 +155,7 @@ namespace cmd_line_utils
 namespace boost { namespace program_options {
 
     void validate(boost::any &v, std::vector<std::string> const &s,
-        cmd_line_utils::include_paths *, int);
+        cmd_line_utils::include_paths *, long);
 
 }} // boost::program_options
 
@@ -165,7 +166,7 @@ namespace po = boost::program_options;
 namespace fs = boost::filesystem;
 
 ///////////////////////////////////////////////////////////////////////////////
-namespace cmd_line_util {
+namespace cmd_line_utils {
 
     // Additional command line parser which interprets '@something' as an 
     // option "config-file" with the value "something".
@@ -216,7 +217,7 @@ namespace cmd_line_util {
 
     // Read all options from a given config file, parse and add them to the
     // given variables_map
-    void read_config_file_options(string const &filename, 
+    bool read_config_file_options(string const &filename, 
         po::options_description const &desc, po::variables_map &vm,
         bool may_fail = false)
     {
@@ -228,7 +229,7 @@ namespace cmd_line_util {
                     << ": command line warning: config file not found"
                     << endl;
             }
-            return;
+            return false;
         }
         
     vector<string> options;
@@ -239,10 +240,14 @@ namespace cmd_line_util {
             string::size_type pos = line.find_first_not_of(" \t");
             if (pos == string::npos) 
                 continue;
-
+            
         // skip comment lines
-            if ('#' != line[pos])
-                options.push_back(line);
+            if ('#' != line[pos]) {
+            // strip leading and trailing whitespace
+                string::size_type endpos = line.find_last_not_of(" \t");
+                BOOST_ASSERT(endpos != string::npos);
+                options.push_back(line.substr(pos, endpos-pos+1));
+            }
         }
 
         if (options.size() > 0) {
@@ -251,6 +256,7 @@ namespace cmd_line_util {
                 .options(desc).style(unix_style).run(), vm);
             po::notify(vm);
         }
+        return true;
     }
 
     // predicate to extract all positional arguments from the command line
@@ -261,6 +267,16 @@ namespace cmd_line_util {
         }
     };
 
+    // trim quotes from path names, if any
+    std::string trim_quotes(std::string const& file)
+    {
+        if (('"' == file[0] || '\'' == file[0]) && file[0] == file[file.size()-1])
+        {
+            return file.substr(1, file.size()-2);
+        }
+        return file;
+    }
+    
 ///////////////////////////////////////////////////////////////////////////////
 }
 
@@ -273,9 +289,9 @@ namespace cmd_line_util {
 namespace boost { namespace program_options {
 
     void validate(boost::any &v, std::vector<std::string> const &s,
-        cmd_line_util::include_paths *, int) 
+        cmd_line_utils::include_paths *, long) 
     {
-        cmd_line_util::include_paths::validate(v, s);
+        cmd_line_utils::include_paths::validate(v, s);
     }
 
 }}  // namespace boost::program_options
@@ -350,14 +366,26 @@ namespace {
 
     ///////////////////////////////////////////////////////////////////////////
     //  Generate some meaningful error messages
-    template <typename Context>
-    inline void 
-    report_error_message(Context &ctx, boost::wave::cpp_exception const &e)
+    template <typename Exception>        
+    inline int 
+    report_error_message(Exception const &e)
     {
         // default error reporting
         cerr 
             << e.file_name() << ":" << e.line_no() << ":" << e.column_no() 
             << ": " << e.description() << endl;
+
+        // errors count as one
+        return (e.get_severity() == boost::wave::util::severity_error ||
+                e.get_severity() == boost::wave::util::severity_fatal) ? 1 : 0;
+    }
+
+    template <typename Context>
+    inline int 
+    report_error_message(Context &ctx, boost::wave::cpp_exception const &e)
+    {
+        // default error reporting
+        int result = report_error_message(e);
 
         using boost::wave::preprocess_exception;
         switch(e.get_errorcode()) {
@@ -367,8 +395,7 @@ namespace {
                 typename Context::position_type pos;
                 if (get_macro_position(ctx, e.get_related_name(), pos)) {
                     cerr 
-                        << pos.get_file() << ":" << pos.get_line() << ":" 
-                        << pos.get_column() << ": " 
+                        << pos << ": " 
                         << preprocess_exception::severity_text(e.get_severity())
                         << ": this is the location of the previous definition." 
                         << endl;
@@ -387,8 +414,10 @@ namespace {
         default:
             break;
         }
-    }
 
+        return result;
+    }
+    
     ///////////////////////////////////////////////////////////////////////////
     //  Read one logical line of text
     inline bool 
@@ -423,11 +452,10 @@ namespace {
                 if (state_file == "-") 
                     state_file = fs::path("wave.state", fs::native);
 
-                using std::ios_base::openmode;
-                openmode mode = ios_base::in;
+                std::ios::openmode mode = std::ios::in;
 
 #if BOOST_WAVE_BINARY_SERIALIZATION != 0
-                mode = (openmode)(mode | ios_base::binary);
+                mode = (std::ios::openmode)(mode | std::ios::binary);
 #endif
                 ifstream ifs (state_file.string().c_str(), mode);
                 if (ifs.is_open()) {
@@ -467,11 +495,10 @@ namespace {
                 if (state_file == "-") 
                     state_file = fs::path("wave.state", fs::native);
 
-                using std::ios_base::openmode;
-                openmode mode = ios_base::out;
+                std::ios::openmode mode = std::ios::out;
 
 #if BOOST_WAVE_BINARY_SERIALIZATION != 0
-                mode = (openmode)(mode | ios_base::binary);
+                mode = (std::ios::openmode)(mode | std::ios::binary);
 #endif
                 ofstream ofs(state_file.string().c_str(), mode);
                 if (!ofs.is_open()) {
@@ -481,7 +508,8 @@ namespace {
                 }
                 else {
                     oarchive oa(ofs);
-                    oa << string(CPP_VERSION_FULL_STR); // write version
+                    string version(CPP_VERSION_FULL_STR);
+                    oa << version; // write version
                     oa << ctx;                  // write the internal tables to disc
                 }
             }
@@ -505,6 +533,7 @@ do_actual_work (std::string file_name, std::istream &instream,
 // current file position is saved for exception handling
 boost::wave::util::file_position_type current_position;
 auto_stop_watch elapsed_time(cerr);
+int error_count = 0;
 
     try {
     // process the given file
@@ -660,9 +689,16 @@ auto_stop_watch elapsed_time(cerr);
         
     // control the generation of #line directives
         if (vm.count("line")) {
+            int lineopt = vm["line"].as<int>();
+            if (0 != lineopt && 1 != lineopt) {
+                cerr << "wave: bogus value for --line command line option: " 
+                    << lineopt << endl;
+                return -1;
+            }
             ctx.set_language(
                 boost::wave::enable_emit_line_directives(ctx.get_language(), 
-                    vm["line"].as<int>() != 0));
+                    lineopt != 0));
+
         }
 
     // add include directories to the system include search paths
@@ -673,23 +709,23 @@ auto_stop_watch elapsed_time(cerr);
             for (vector<string>::const_iterator cit = syspaths.begin(); 
                  cit != end; ++cit)
             {
-                ctx.add_sysinclude_path((*cit).c_str());
+                ctx.add_sysinclude_path(cmd_line_utils::trim_quotes(*cit).c_str());
             }
         }
         
     // add include directories to the include search paths
         if (vm.count("include")) {
-            cmd_line_util::include_paths const &ip = 
-                vm["include"].as<cmd_line_util::include_paths>();
+            cmd_line_utils::include_paths const &ip = 
+                vm["include"].as<cmd_line_utils::include_paths>();
             vector<string>::const_iterator end = ip.paths.end();
 
             for (vector<string>::const_iterator cit = ip.paths.begin(); 
                  cit != end; ++cit)
             {
-                ctx.add_include_path((*cit).c_str());
+                ctx.add_include_path(cmd_line_utils::trim_quotes(*cit).c_str());
             }
 
-        // if -I- was goven on the command line, this has to be propagated
+        // if -I- was given on the command line, this has to be propagated
             if (ip.seen_separator) 
                 ctx.set_sysinclude_delimiter();
                  
@@ -698,7 +734,7 @@ auto_stop_watch elapsed_time(cerr);
             for (vector<string>::const_iterator syscit = ip.syspaths.begin(); 
                  syscit != sysend; ++syscit)
             {
-                ctx.add_sysinclude_path((*syscit).c_str());
+                ctx.add_sysinclude_path(cmd_line_utils::trim_quotes(*syscit).c_str());
             }
         }
     
@@ -758,6 +794,7 @@ auto_stop_watch elapsed_time(cerr);
                 default_outfile = "-";
             }
             else {
+                out_file = fs::complete(out_file);
                 fs::create_directories(out_file.branch_path());
                 output.open(out_file.string().c_str());
                 if (!output.is_open()) {
@@ -788,6 +825,16 @@ auto_stop_watch elapsed_time(cerr);
             default_outfile = out_file.string();
         }
 
+    //  we assume the session to be interactive if input is stdin and output is 
+    //  stdout and the output is not inhibited
+    bool is_interactive = input_is_stdin && !output.is_open() && allow_output;
+    
+        if (is_interactive) {
+        // if interactive we don't warn for missing endif's etc.
+            ctx.set_language(
+                boost::wave::enable_single_line(ctx.get_language()));
+        }
+        
     // analyze the input file
     context_type::iterator_type first = ctx.begin();
     context_type::iterator_type last = ctx.end();
@@ -808,10 +855,6 @@ auto_stop_watch elapsed_time(cerr);
             }
         }
 
-    //  we assume the session to be interactive if input is stdin and output is 
-    //  stdout and the output is not inhibited
-    bool is_interactive = input_is_stdin && !output.is_open() && allow_output;
-    
         elapsed_time.set_print_time(!input_is_stdin && vm.count("timer") > 0);
         if (is_interactive) {
             print_interactive_version();  // print welcome message
@@ -849,7 +892,7 @@ auto_stop_watch elapsed_time(cerr);
 
                     // print out the current token value
                         if (allow_output) {
-                            if (output.rdstate() & (ios::badbit | ios::failbit | ios::eofbit))
+                            if (output.rdstate() & (std::ios::badbit | std::ios::failbit | std::ios::eofbit))
                             {
                                 cerr << "wave: problem writing to the current "
                                      << "output file" << endl;
@@ -870,7 +913,18 @@ auto_stop_watch elapsed_time(cerr);
                 catch (boost::wave::cpp_exception const &e) {
                 // some preprocessing error
                     if (is_interactive || boost::wave::is_recoverable(e)) {
-                        report_error_message(ctx, e);
+                        error_count += report_error_message(ctx, e);
+                    }
+                    else {
+                        throw;      // re-throw for non-recoverable errors
+                    }
+                }
+                catch (boost::wave::cpplexer::lexing_exception const &e) {
+                // some preprocessing error
+                    if (is_interactive || 
+                        boost::wave::cpplexer::is_recoverable(e)) 
+                    {
+                        error_count += report_error_message(e);
                     }
                     else {
                         throw;      // re-throw for non-recoverable errors
@@ -884,24 +938,18 @@ auto_stop_watch elapsed_time(cerr);
     }
     catch (boost::wave::cpp_exception const &e) {
     // some preprocessing error
-        cerr 
-            << e.file_name() << ":" << e.line_no() << ":" << e.column_no() << ": "
-            << e.description() << endl;
+        report_error_message(e);
         return 1;
     }
     catch (boost::wave::cpplexer::lexing_exception const &e) {
     // some lexing error
-        cerr 
-            << e.file_name() << ":" << e.line_no() << ":" << e.column_no() << ": "
-            << e.description() << endl;
+        report_error_message(e);
         return 2;
     }
     catch (std::exception const &e) {
     // use last recognized token to retrieve the error position
         cerr 
-            << current_position.get_file() 
-            << ":" << current_position.get_line() 
-            << ":" << current_position.get_column() << ": "
+            << current_position << ": "
             << "exception caught: " << e.what()
             << endl;
         return 3;
@@ -909,13 +957,11 @@ auto_stop_watch elapsed_time(cerr);
     catch (...) {
     // use last recognized token to retrieve the error position
         cerr 
-            << current_position.get_file() 
-            << ":" << current_position.get_line()
-            << ":" << current_position.get_column() << ": "
+            << current_position << ": "
             << "unexpected exception caught." << endl;
         return 4;
     }
-    return 0;
+    return -error_count;  // returns the number of errors as a negative integer
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -953,7 +999,7 @@ main (int argc, char *argv[])
                 "disable output [-]")
             ("autooutput,E", 
                 "output goes into a file named <input_basename>.i")
-            ("include,I", po::value<cmd_line_util::include_paths>()->composing(), 
+            ("include,I", po::value<cmd_line_utils::include_paths>()->composing(), 
                 "specify an additional include directory")
             ("sysinclude,S", po::value<vector<string> >()->composing(), 
                 "specify an additional system include directory")
@@ -990,7 +1036,7 @@ main (int argc, char *argv[])
                             "2: all whitespace is preserved")
             ("line,L", po::value<int>()->default_value(1), 
                 "control the generation of #line directives\n"
-                            "0: no #line directives are generated\n"
+                            "0: no #line directives are generated,\n"
                             "1: #line directives will be emitted (default)")
             ("extended,x", "enable the #pragma wave system() directive")
 #if BOOST_WAVE_SUPPORT_PRAGMA_ONCE != 0
@@ -1014,20 +1060,46 @@ main (int argc, char *argv[])
         using namespace boost::program_options::command_line_style;
 
     po::parsed_options opts(po::parse_command_line(argc, argv, 
-            desc_overall_cmdline, unix_style, cmd_line_util::at_option_parser));
+            desc_overall_cmdline, unix_style, cmd_line_utils::at_option_parser));
     po::variables_map vm;
     
         po::store(opts, vm);
         po::notify(vm);
 
-    // Try to find a wave.cfg in the same directory as the executable was 
-    // started from. If this exists, treat it as a wave config file
-    fs::path filename(argv[0], fs::native);
+//     // Try to find a wave.cfg in the same directory as the executable was 
+//     // started from. If this exists, treat it as a wave config file
+//     fs::path filename(argv[0], fs::native);
+// 
+//         filename = filename.branch_path() / "wave.cfg";
+//         cmd_line_utils::read_config_file_options(filename.string(), 
+//             desc_overall_cfgfile, vm, true);
 
-        filename = filename.branch_path() / "wave.cfg";
-        cmd_line_util::read_config_file_options(filename.string(), 
-            desc_overall_cfgfile, vm, true);
+    // extract the arguments from the parsed command line
+    vector<po::option> arguments;
+    
+        std::remove_copy_if(opts.options.begin(), opts.options.end(), 
+            back_inserter(arguments), cmd_line_utils::is_argument());
+            
+    // try to find a config file somewhere up the filesystem hierarchy 
+    // starting with the input file path. This allows to use a general wave.cfg 
+    // file for all files in a certain project.
+        if (arguments.size() > 0 && arguments[0].value[0] != "-") {
+        // construct full path of input file
+            fs::path input_dir (fs::complete(fs::path(arguments[0].value[0], fs::native)));
+            input_dir = input_dir.normalize().branch_path();    // chop of file name
 
+        // walk up the hierarchy, trying to find a file wave.cfg 
+            while (!input_dir.empty()) {
+                fs::path filename = input_dir / "wave.cfg";
+                if (cmd_line_utils::read_config_file_options(filename.string(), 
+                    desc_overall_cfgfile, vm, true))
+                {
+                    break;    // break on the first cfg file found
+                }
+                input_dir = input_dir.branch_path();
+            }
+        }
+        
     // if there is specified at least one config file, parse it and add the 
     // options to the main variables_map
         if (vm.count("config-file")) {
@@ -1038,7 +1110,7 @@ main (int argc, char *argv[])
                  cit != end; ++cit)
             {
             // parse a single config file and store the results
-                cmd_line_util::read_config_file_options(*cit, 
+                cmd_line_utils::read_config_file_options(*cit, 
                     desc_overall_cfgfile, vm);
             }
         }
@@ -1062,12 +1134,6 @@ main (int argc, char *argv[])
             return print_copyright();
         }
 
-    // extract the arguments from the parsed command line
-    vector<po::option> arguments;
-    
-        std::remove_copy_if(opts.options.begin(), opts.options.end(), 
-            back_inserter(arguments), cmd_line_util::is_argument());
-            
     // if there is no input file given, then take input from stdin
         if (0 == arguments.size() || 0 == arguments[0].value.size() ||
             arguments[0].value[0] == "-") 
@@ -1076,6 +1142,12 @@ main (int argc, char *argv[])
             return do_actual_work("<stdin>", std::cin, vm, true);
         }
         else {
+            if (arguments.size() > 1) {
+            // this driver understands to parse one input file only
+                cerr << "wave: more than one input file specified, "
+                     << "ignoring all but the first!" << endl;
+            }
+
         std::string file_name(arguments[0].value[0]);
         ifstream instream(file_name.c_str());
 
