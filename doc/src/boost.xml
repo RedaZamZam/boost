@@ -464,8 +464,6 @@
      </libraryinfo>
    </library>
 
-   <xi:include href="mpi.xml"/>
-
    <library name="Pool" dirname="pool" html-only="1">
      <libraryinfo>
        <author>

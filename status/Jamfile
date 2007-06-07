@@ -18,7 +18,6 @@ DEPENDS all : test ;
 subinclude libs/any/test ;                 # test-suite any
 subinclude libs/algorithm/minmax/test ;    # test-suite algorithm/minmax
 subinclude libs/algorithm/string/test ;    # test-suite algorithm/string
-subinclude libs/asio/test ;                # test-suite asio
 subinclude libs/assign/test ;              # test-suite assign
 subinclude libs/bind/test ;                # test-suite bind
 subinclude libs/conversion/test ;          # test-suite conversion
@@ -58,7 +57,6 @@ subinclude libs/smart_ptr/test ;           # test-suite smart_ptr
 subinclude libs/spirit/test ;              # test-suite spirit
 subinclude libs/statechart/test ;          # test-suite statechart
 subinclude libs/static_assert ;            # test-suite static_assert
-subinclude libs/system/test;               # test-suite system
 subinclude libs/thread/test ;              # test-suite thread
 subinclude libs/tr1/test ;                 # test-suite tr1
 subinclude libs/type_traits/test ;         # test-suite type_traits
@@ -104,8 +102,7 @@ subinclude libs/xpressive/test ;           # test-suite xpressive
         ;
 
     test-suite array
-        : [ run libs/array/array0.cpp ]
-          [ run libs/array/array1.cpp ]
+        : [ run libs/array/array1.cpp ]
           [ run libs/array/array2.cpp ]
           [ run libs/array/array3.cpp ]
           [ run libs/array/array4.cpp ]
