@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+   Copyright (c) 2002 Douglas Gregor <doug.gregor -at- gmail.com>
+  
+   Distributed under the Boost Software License, Version 1.0.
+   (See accompanying file LICENSE_1_0.txt or copy at
+   http://www.boost.org/LICENSE_1_0.txt)
+  -->
 <xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
                 version="1.0">
   <xsl:include href="reference.xsl"/>
@@ -50,15 +57,23 @@
 
           <xsl:if test="concept">
             <section>
+              <xsl:choose>
+                <xsl:when test="@id">
+                  <xsl:attribute name="id">
+                    <xsl:value-of select="@id"/>
+                    <xsl:text>.concepts</xsl:text>
+                  </xsl:attribute>
+                </xsl:when>
+                <xsl:when test="ancestor::library/attribute::id">
+                  <xsl:attribute name="id">
+                    <xsl:value-of select="ancestor::library/attribute::id"/>
+                    <xsl:text>.concepts</xsl:text>
+                  </xsl:attribute>
+                </xsl:when>
+              </xsl:choose>
+
               <title>Concepts</title>
-
-              <xsl:if test="ancestor::library/attribute::id">
-                <xsl:attribute name="id">
-                  <xsl:value-of select="ancestor::library/attribute::id"/>
-                  <xsl:text>.concepts</xsl:text>
-                </xsl:attribute>
-              </xsl:if>
-
+              
               <itemizedlist>
                 <xsl:for-each select="concept">
                   <listitem>
@@ -113,14 +128,16 @@
         </xsl:if>
 
         <xsl:if test="descendant::class|descendant::struct|descendant::union
-                      |descendant::function|descendant::free-function-group
-                      |descendant::overloaded-function|descendant::enum">
+                     |descendant::function|descendant::free-function-group
+                     |descendant::overloaded-function|descendant::enum
+                     |descendant::typedef">
           <xsl:call-template name="synopsis">
             <xsl:with-param name="text">
               <xsl:apply-templates mode="synopsis" 
                 select="namespace|class|struct|union
-                         |function|free-function-group
-                         |overloaded-function|enum">
+                       |function|free-function-group
+                       |overloaded-function|enum
+                       |typedef">
                 <xsl:with-param name="indentation" select="0"/>
               </xsl:apply-templates>
             </xsl:with-param>
