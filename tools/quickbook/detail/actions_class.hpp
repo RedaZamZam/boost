@@ -30,6 +30,10 @@ namespace quickbook
         typedef std::vector<std::pair<std::string, std::string> > author_list;
         typedef std::pair<char, int> mark_type;
         static int const max_template_depth = 100;
+    
+    // backend
+        std::string             backend_file;
+        std::string             backend_tag;
 
     // header info
         std::string             doc_type;
@@ -85,8 +89,10 @@ namespace quickbook
         std::string             macro_id;
         std::stack<mark_type>   list_marks;
         int                     list_indent;
+        std::vector<bool>       conditions;
         string_list             template_info;
         int                     template_depth;
+        bool                    template_escape;
         template_stack          templates;
 
     // push/pop the states and the streams
@@ -96,6 +102,11 @@ namespace quickbook
     ///////////////////////////////////////////////////////////////////////////
     // actions
     ///////////////////////////////////////////////////////////////////////////
+        backend_action          doc_pre;
+        backend_action          doc_post;
+        backend_action          doc_info_pre;
+        backend_action          doc_info_post;
+        
         error_action            error;
         phrase_to_string_action extract_doc_license;
         phrase_to_string_action extract_doc_purpose;
@@ -113,6 +124,8 @@ namespace quickbook
         plain_char_action       plain_char;
         raw_char_action         raw_char;
         image_action            image;
+        cond_phrase_action_pre  cond_phrase_pre;
+        cond_phrase_action_post cond_phrase_post;
 
         list_action             list;
         list_format_action      list_format;
@@ -161,8 +174,8 @@ namespace quickbook
         markup_action           end_varlistentry;
         markup_action           start_varlistterm;
         markup_action           end_varlistterm;
-        markup_action           start_varlistitem;
-        markup_action           end_varlistitem;
+        start_varlistitem_action start_varlistitem;
+        end_varlistitem_action  end_varlistitem;
 
         break_action            break_;
         macro_identifier_action macro_identifier;
@@ -179,16 +192,13 @@ namespace quickbook
         markup_action           end_row;
         start_col_action        start_cell;
         end_col_action          end_cell;
-        anchor_action           anchor;
+        string_action           anchor;
 
         begin_section_action    begin_section;
         end_section_action      end_section;
         xinclude_action         xinclude;
         include_action          include;
         import_action           import;
-
-        markup_action           escape_pre;
-        markup_action           escape_post;
     };
 }
 

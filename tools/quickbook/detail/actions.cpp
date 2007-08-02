@@ -23,13 +23,51 @@
 
 namespace quickbook
 {
+    inline collector & backend_action::out() const
+    {
+        return out_ ? *out_ : actions.out;
+    }
+    
+    inline collector & backend_action::phrase() const
+    {
+        return phrase_ ? *phrase_ : actions.phrase;
+    }
+    
+    inline std::string backend_action::pop_phrase() const
+    {
+        std::string str;
+        phrase().swap(str);
+        return str;
+    }
+    
+    inline std::string backend_action::pop_template_arg() const
+    {
+        std::string str = actions.template_info.front();
+        actions.template_info.erase(actions.template_info.begin());
+        return str;
+    }
+    
+    inline void backend_action::out_phrase() const
+    {
+        out() << actions.phrase.str();
+        actions.phrase.clear();
+    }
+    
+    void backend_action::operator()(iterator first, iterator last) const
+    {
+        actions.template_info.insert(
+            actions.template_info.begin(),
+            this->actions.backend_tag+"_"+this->action_name);
+        do_template_action::operator()(first,last);
+    }
+    
     // Handles line-breaks (DEPRECATED!!!)
     void break_action::operator()(iterator first, iterator) const
     {
         boost::spirit::file_position const pos = first.get_position();
         detail::outwarn(pos.file,pos.line) << "in column:" << pos.column << ", "
             << "[br] and \\n are deprecated" << ".\n";
-        phrase << break_mark;
+        backend_action::operator()();
     }
 
     void error_action::operator()(iterator first, iterator /*last*/) const
@@ -41,63 +79,71 @@ namespace quickbook
 
     void phrase_action::operator()(iterator first, iterator last) const
     {
-        std::string str;
-        phrase.swap(str);
-        out << pre << str << post;
+        std::string str = pop_phrase();
+        
+        backend_action::operator()(boost::assign::list_of
+            (str)
+            );
+        
+        out_phrase();
     }
 
     void header_action::operator()(iterator first, iterator last) const
     {
-        std::string str;
-        phrase.swap(str);
+        std::string str = pop_phrase();
 
         if (qbk_version_n < 103) // version 1.2 and below
         {
-            out << "<anchor id=\""
-                << section_id << '.'
-                << detail::make_identifier(str.begin(), str.end())
-                << "\" />"
-                << pre << str << post
-                ;
+            std::string anchor =
+                actions.section_id + '.' +
+                detail::make_identifier(str.begin(), str.end());
+
+            backend_action(this->action_name+"_1_0",actions)(boost::assign::list_of
+                (str)
+                (anchor)
+                (section_level)
+                );
         }
         else // version 1.3 and above
         {
             std::string anchor =
-                library_id + '.' + qualified_section_id + '.' +
+                actions.doc_id + '.' + actions.qualified_section_id + '.' +
                 detail::make_identifier(str.begin(), str.end());
 
-            out << "<anchor id=\"" << anchor << "\"/>"
-                << pre
-                << "<link linkend=\"" << anchor << "\">"
-                << str
-                << "</link>"
-                << post
-                ;
+            backend_action::operator()(boost::assign::list_of
+                (str)
+                (anchor)
+                (section_level)
+                );
         }
+        
+        out_phrase();
     }
 
     void generic_header_action::operator()(iterator first, iterator last) const
     {
-        int level_ = section_level + 2;     // section_level is zero-based. We need to use a
-                                            // 0ne-based heading which is one greater
-                                            // than the current. Thus: section_level + 2.
-        if (level_ > 6)                     // The max is h6, clip it if it goes
-            level_ = 6;                     // further than that
-        std::string str;
-        phrase.swap(str);
-
+        // section_level is zero-based. We need to use a
+        // 0ne-based heading which is one greater
+        // than the current. Thus: section_level + 2.
+        int level_ = actions.section_level + 2;
+        
+        // The max is h6, clip it if it goes
+        // further than that
+        if (level_ > 6) { level_ = 6; }
+        
+        std::string str = pop_phrase();
+        
         std::string anchor =
-            library_id + '.' + qualified_section_id + '.' +
+            actions.doc_id + '.' + actions.qualified_section_id + '.' +
             detail::make_identifier(str.begin(), str.end());
-
-        out
-            << "<anchor id=\"" << anchor << "\"/>"
-            << "<bridgehead renderas=\"sect" << level_ << "\">"
-            << "<link linkend=\"" << anchor << "\">"
-            << str
-            << "</link>"
-            << "</bridgehead>"
-            ;
+        
+        backend_action::operator()(boost::assign::list_of
+            (str)
+            (anchor)
+            (boost::lexical_cast<std::string>(level_))
+            );
+        
+        out_phrase();
     }
 
     void simple_phrase_action::operator()(iterator first, iterator last) const
@@ -114,6 +160,31 @@ namespace quickbook
                 detail::print_char(*first++, out.get());
         }
         out << post;
+    }
+
+    void cond_phrase_action_pre::operator()(iterator first, iterator last) const
+    {
+        std::string str(first, last);
+        conditions.push_back(find(macro, str.c_str()));
+        out.push(); // save the stream
+    }
+
+    void cond_phrase_action_post::operator()(iterator first, iterator last) const
+    {
+        bool symbol_found = conditions.back();
+        conditions.pop_back();
+
+        if (first == last || !symbol_found)
+        {
+            out.pop(); // restore the stream
+        }
+        else
+        {
+            std::string save;
+            out.swap(save);
+            out.pop(); // restore the stream
+            out << save; // print the body
+        }
     }
 
     void list_action::operator()(iterator first, iterator last) const
@@ -173,7 +244,7 @@ namespace quickbook
 
                 std::string str;
                 out.swap(str);
-                std::string::size_type pos = str.rfind("\n</listitem>");
+                std::string::size_type pos = str.rfind("</listitem>");
                 BOOST_ASSERT(pos <= str.size());
                 str.erase(str.begin()+pos, str.end());
                 out << str;
@@ -219,12 +290,16 @@ namespace quickbook
         out << '#'; // print out an unexpected character
     }
 
-    void anchor_action::operator()(iterator first, iterator last) const
+    void string_action::operator()(iterator first, iterator last) const
     {
-        out << "<anchor id=\"";
-        while (first != last)
-            detail::print_char(*first++, out.get());
-        out << "\" />\n";
+        std::string str = pop_phrase();
+        str = detail::make_string(str.begin(),str.end());
+        
+        backend_action::operator()(boost::assign::list_of
+            (str)
+            );
+        
+        out_phrase();
     }
 
     void do_macro_action::operator()(std::string const& str) const
@@ -347,22 +422,13 @@ namespace quickbook
 
     void image_action::operator()(iterator first, iterator last) const
     {
-        fs::path const img_path(std::string(first, last));
-
-        phrase << "<inlinemediaobject>";
-
-        phrase << "<imageobject><imagedata fileref=\"";
-        while (first != last)
-            detail::print_char(*first++, phrase.get());
-        phrase << "\"></imagedata></imageobject>";
-
-        // Also add a textobject -- use the basename of the image file.
-        // This will mean we get "alt" attributes of the HTML img.
-        phrase << "<textobject><phrase>";
-        detail::print_string(fs::basename(img_path), phrase.get());
-        phrase << "</phrase></textobject>";
-
-        phrase << "</inlinemediaobject>";
+        std::string str(pop_template_arg());
+        std::string alt(fs::basename(str));
+        
+        backend_action::operator()(boost::assign::list_of
+            (str)
+            (alt)
+            );
     }
 
     void macro_identifier_action::operator()(iterator first, iterator last) const
@@ -434,9 +500,21 @@ namespace quickbook
                         << template_info.size()-1
                         << " argument(s) instead."
                         << std::endl;
+                    for (std::size_t i = 0; i < template_info.size(); ++i)
+                    {
+                        detail::outerr(pos.file,pos.line)
+                            << "arg #" << i
+                            << " == '" << template_info[i] << "'" << std::endl;
+                    }
                     return false;
                 }
             }
+            //~ for (std::size_t i = 0; i < template_info.size(); ++i)
+            //~ {
+                //~ detail::outwarn(pos.file,pos.line)
+                    //~ << "arg #" << i
+                    //~ << " == '" << template_info[i] << "'" << std::endl;
+            //~ }
             return true;
         }
 
@@ -495,7 +573,14 @@ namespace quickbook
             bool is_block = (iter != body.end()) && ((*iter == '\r') || (*iter == '\n'));
             bool r = false;
 
-            if (!is_block)
+            if (actions.template_escape)
+            {
+                //  escape the body of the template
+                //  we just copy out the literal body
+                result = body;
+                r = true;
+            }
+            else if (!is_block)
             {
                 //  do a phrase level parse
                 iterator first(body.begin(), body.end(), actions.filename.native_file_string().c_str());
@@ -554,6 +639,7 @@ namespace quickbook
             {
                 actions.pop(); // restore the actions' states
                 --actions.template_depth;
+                actions.template_escape = false;
                 return;
             }
 
@@ -568,6 +654,7 @@ namespace quickbook
             {
                 actions.pop(); // restore the actions' states
                 --actions.template_depth;
+                actions.template_escape = false;
                 return;
             }
 
@@ -584,6 +671,7 @@ namespace quickbook
                     << "Expanding template" << std::endl;
                 actions.pop(); // restore the actions' states
                 --actions.template_depth;
+                actions.template_escape = false;
                 return;
             }
         }
@@ -591,6 +679,7 @@ namespace quickbook
         actions.pop(); // restore the actions' states
         actions.phrase << result; // print it!!!
         --actions.template_depth;
+        actions.template_escape = false;
     }
 
     void link_action::operator()(iterator first, iterator last) const
@@ -633,6 +722,20 @@ namespace quickbook
         actions.table_span = 0;
         actions.table_header.clear();
         actions.table_title.clear();
+    }
+
+    void start_varlistitem_action::operator()(char) const
+    {
+        phrase << start_varlistitem_;
+        phrase.push();
+    }
+
+    void end_varlistitem_action::operator()(char) const
+    {
+        std::string str;
+        temp_para.swap(str);
+        phrase.pop();
+        phrase << str << end_varlistitem_;
     }
 
     void table_action::operator()(iterator, iterator) const
@@ -867,7 +970,7 @@ namespace quickbook
         }
         std::string temp(first, last);
         detail::unindent(temp); // remove all indents
-        snippet += temp;
+        snippet += "\n" + temp; // add a linebreak to allow block marskups
     }
 
     void cpp_code_snippet_grammar::compile(iterator first, iterator last) const
@@ -1014,10 +1117,10 @@ namespace quickbook
 
     void xml_author::operator()(std::pair<std::string, std::string> const& author) const
     {
-        out << "    <author>\n"
-            << "      <firstname>" << author.first << "</firstname>\n"
-            << "      <surname>" << author.second << "</surname>\n"
-            << "    </author>\n";
+        out << "      <author>\n"
+            << "        <firstname>" << author.first << "</firstname>\n"
+            << "        <surname>" << author.second << "</surname>\n"
+            << "      </author>\n";
     }
 
     void xml_year::operator()(std::string const &year) const
@@ -1073,35 +1176,34 @@ namespace quickbook
             qbk_version_n = (qbk_major_version * 100) + qbk_minor_version;
         }
 
-        out << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-            << "<!DOCTYPE library PUBLIC \"-//Boost//DTD BoostBook XML V1.0//EN\"\n"
-            << "     \"http://www.boost.org/tools/boostbook/dtd/boostbook.dtd\">\n"
-            << '<' << actions.doc_type << "\n"
-            << "    id=\"" << actions.doc_id << "\"\n"
-            << "    name=\"" << actions.doc_title << "\"\n"
-            << "    dirname=\"" << actions.doc_dirname << "\"\n"
-            << "    last-revision=\"" << actions.doc_last_revision << "\" \n"
-            << "    xmlns:xi=\"http://www.w3.org/2001/XInclude\">\n"
-            << "  <" << actions.doc_type << "info>\n";
+        actions.doc_pre(boost::assign::list_of
+            (actions.doc_type)
+            );
+        actions.doc_info_pre(boost::assign::list_of
+            (actions.doc_type)
+            (actions.doc_id)
+            (actions.doc_title)
+            (actions.doc_dirname)
+            (actions.doc_last_revision)
+            );
 
+        backend_action("doc_info_author_pre",actions)();
         for_each(
             actions.doc_authors.begin()
           , actions.doc_authors.end()
-          , xml_author(out));
+          , backend_action("doc_info_author",actions));
+        backend_action("doc_info_author_post",actions)();
 
         if (!actions.doc_copyright_holder.empty())
         {
-            out << "\n" << "    <copyright>\n";
+            backend_action("doc_info_copyright_pre",actions)();
 
             for_each(
                 actions.doc_copyright_years.begin()
               , actions.doc_copyright_years.end()
-              , xml_year(out));
-
-            out << "      <holder>" << actions.doc_copyright_holder << "</holder>\n"
-                << "    </copyright>\n"
-                << "\n"
-            ;
+              , backend_action("doc_info_copyright_year",actions));
+            
+            backend_action("doc_info_copyright_post",actions)();
         }
 
         if (qbk_version_n < 103)
@@ -1113,44 +1215,45 @@ namespace quickbook
 
         if (!actions.doc_license.empty())
         {
-            out << "    <legalnotice>\n"
-                << "      <para>\n"
-                << "        " << actions.doc_license << "\n"
-                << "      </para>\n"
-                << "    </legalnotice>\n"
-                << "\n"
-            ;
+            backend_action("doc_info_license",actions)(boost::assign::list_of
+                (actions.doc_license)
+                );
         }
 
         if (!actions.doc_purpose.empty())
         {
-            out << "    <" << actions.doc_type << "purpose>\n"
-                << "      " << actions.doc_purpose
-                << "    </" << actions.doc_type << "purpose>\n"
-                << "\n"
-            ;
+            backend_action("doc_info_purpose",actions)(boost::assign::list_of
+                (actions.doc_type)
+                (actions.doc_purpose)
+                );
         }
-
+        
         if (!actions.doc_category.empty())
         {
-            out << "    <" << actions.doc_type << "category name=\"category:"
-                << actions.doc_category
-                << "\"></" << actions.doc_type << "category>\n"
-                << "\n"
-            ;
+            backend_action("doc_info_category",actions)(boost::assign::list_of
+                (actions.doc_type)
+                (actions.doc_category)
+                );
         }
-
-        out << "  </" << actions.doc_type << "info>\n"
-            << "\n"
-        ;
+        
+        actions.doc_info_post(boost::assign::list_of
+            (actions.doc_type)
+            (actions.doc_id)
+            );
 
         if (!actions.doc_title.empty())
         {
-            out << "  <title>" << actions.doc_title;
-            if (!actions.doc_version.empty())
-                out << ' ' << actions.doc_version;
-            out << "</title>\n\n\n";
+            backend_action("doc_title",actions)(boost::assign::list_of
+                (actions.doc_title
+                    + (!actions.doc_version.empty()
+                        ? ( std::string(" ")+actions.doc_version )
+                        : ( std::string("") )
+                        ))
+                );
         }
+        
+        actions.out << actions.phrase.str();
+        actions.phrase.clear();
     }
 
     void post(collector& out, quickbook::actions& actions, bool ignore_docinfo)
@@ -1163,7 +1266,12 @@ namespace quickbook
 
         // We've finished generating our output. Here's what we'll do
         // *after* everything else.
-        out << "\n</" << actions.doc_type << ">\n\n";
+        actions.doc_post(boost::assign::list_of
+            (actions.doc_type)
+            );
+        
+        actions.out << actions.phrase.str();
+        actions.phrase.clear();
     }
 
     void phrase_to_string_action::operator()(iterator first, iterator last) const

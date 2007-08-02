@@ -80,11 +80,11 @@ namespace quickbook
                 eol = blank >> eol_p
                     ;
 
-                close_bracket =
+                phrase_end =
                     ']' |
                     if_p(var(self.no_eols))
                     [
-                        eol_p >> eol_p                  // Make sure that we don't go
+                        eol >> eol                      // Make sure that we don't go
                     ]                                   // past a single block, except
                     ;                                   // when preformatted.
 
@@ -123,20 +123,28 @@ namespace quickbook
                         )
                     ;
 
+                static const bool true_ = true;
+                static const bool false_ = false;
+
                 template_ =
                     (
+                        ch_p('`')                       [assign_a(actions.template_escape,true_)]
+                        |
+                        eps_p                           [assign_a(actions.template_escape,false_)]
+                    )
+                    >>
+                    ( (
                         (eps_p(punct_p)
                             >> actions.templates.scope
                         )                               [push_back_a(actions.template_info)]
                         >> !template_args
-                    )
-                |   (
+                    ) | (
                         (actions.templates.scope
                             >> eps_p
                         )                               [push_back_a(actions.template_info)]
                         >> !(hard_space
                             >> template_args)
-                    )
+                    ) )
                     ;
 
                 brackets =
@@ -186,25 +194,25 @@ namespace quickbook
                     ;
 
                 simple_markup(simple_bold,
-                    '*', actions.simple_bold, close_bracket);
+                    '*', actions.simple_bold, phrase_end);
                 simple_markup(simple_italic,
-                    '/', actions.simple_italic, close_bracket);
+                    '/', actions.simple_italic, phrase_end);
                 simple_markup(simple_underline,
-                    '_', actions.simple_underline, close_bracket);
+                    '_', actions.simple_underline, phrase_end);
                 simple_markup(simple_teletype,
-                    '=', actions.simple_teletype, close_bracket);
+                    '=', actions.simple_teletype, phrase_end);
 
                 phrase =
                    *(   common
                     |   comment
-                    |   (anychar_p -
-                            close_bracket)              [actions.plain_char]
+                    |   (anychar_p - phrase_end)        [actions.plain_char]
                     )
                     ;
 
                 phrase_markup =
                         '['
-                    >>  (   image
+                    >>  (   cond_phrase
+                        |   image
                         |   url
                         |   link
                         |   anchor
@@ -235,16 +243,26 @@ namespace quickbook
                     |   "\\ "                           // ignore an escaped char
                     |   '\\' >> punct_p                 [actions.raw_char]
                     |   (
-                            ("'''" >> !eol)             [actions.escape_pre]
+                            ("'''" >> !eol)
                         >>  *(anychar_p - "'''")        [actions.raw_char]
-                        >>  str_p("'''")                [actions.escape_post]
+                        >>  str_p("'''")
                         )
+                    ;
+
+                macro_identifier =
+                    +(anychar_p - (space_p | ']'))
+                    ;
+
+                cond_phrase =
+                        '?' >> blank
+                    >>  macro_identifier                [actions.cond_phrase_pre]
+                    >>  (!phrase)                       [actions.cond_phrase_post]
                     ;
 
                 image =
                         '$' >> blank
                     >> (*(anychar_p -
-                            close_bracket))             [actions.image]
+                            phrase_end))                [actions.image]
                     ;
 
                 url =
@@ -269,7 +287,7 @@ namespace quickbook
                         '#'
                     >>  blank
                     >>  (   *(anychar_p -
-                                close_bracket)
+                                phrase_end)
                         )                               [actions.anchor]
                     ;
 
@@ -385,14 +403,16 @@ namespace quickbook
             }
 
             rule<Scanner>   space, blank, comment, phrase, phrase_markup, image,
-                            close_bracket, bold, italic, underline, teletype,
+                            phrase_end, bold, italic, underline, teletype,
                             strikethrough, escape, url, common, funcref,
                             classref, memberref, enumref, macroref, headerref, conceptref,
                             anchor, link, hard_space, eol, inline_code, simple_format,
                             simple_bold, simple_italic, simple_underline,
                             simple_teletype, source_mode, template_, template_arg,
                             quote, code_block, footnote, replaceable, macro,
-                            brackets, template_args, dummy_block;
+                            brackets, template_args, dummy_block, cond_phrase,
+                            macro_identifier
+                            ;
 
             rule<Scanner> const&
             start() const { return common; }
