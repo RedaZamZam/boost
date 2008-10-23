@@ -18,11 +18,17 @@ feature.extend toolset : vacpp ;
 toolset.inherit vacpp : unix ;
 generators.override vacpp.prebuilt : builtin.lib-generator ;
 generators.override vacpp.searched-lib-generator : searched-lib-generator ;
-feature.subfeature toolset vacpp : version ;
 
 # Configure the vacpp toolset
 rule init ( version ? : command * : options * )
 {
+    local condition = [ 
+        common.check-init-parameters vacpp : version $(version) ] ;
+              
+    command = [ common.get-invocation-command vacpp : xlC
+        : $(command) : "/usr/vacpp/bin/xlC" ] ;
+                              
+    common.handle-options vacpp : $(condition) : $(command) : $(options) ;
 }
 
 # Declare generators
@@ -54,7 +60,7 @@ flags vacpp C++FLAGS <rtti>on : -qrtti ;
 # Enable 64-bit memory addressing model
 flags vacpp CFLAGS <address-model>64 : -q64 ;
 flags vacpp LINKFLAGS <address-model>64 : -q64 ;
-flags vacpp ARFLAGS <address-model>64 : -X 64 ;
+flags vacpp ARFLAGS <target-os>aix/<address-model>64 : -X 64 ;
 
 # Use absolute path when generating debug information
 flags vacpp CFLAGS <debug-symbols>on : -g -qfullpath ;
@@ -126,5 +132,5 @@ actions vacpp.compile.c++
 
 actions updated together piecemeal vacpp.archive
 {
-    ar ru$(ARFLAGS:E="") "$(<)" "$(>)"
+    ar $(ARFLAGS) ru "$(<)" "$(>)"
 }

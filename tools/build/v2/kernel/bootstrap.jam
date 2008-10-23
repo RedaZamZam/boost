@@ -94,12 +94,8 @@ IMPORT modules : import : : import ;
       util          # low-level substrate: string/number handling, etc.
       build         # essential elements of the build system architecture
       tools         # toolsets for handling specific build jobs and targets.
-
-      new           # until we get everything sorted out, there is
-                    # still some code here
-
+      contrib       # user contributed (unreviewed) modules
       .             # build-system.jam lives here
-
       ;
     local whereami = [ NORMALIZE_PATH $(.bootstrap-file:DT) ] ;
     BOOST_BUILD_PATH += $(whereami:D)/$(subdirs) ;
@@ -118,7 +114,7 @@ import modules ;
 import option ;
 local dont-build = [ option.process ] ;
 
-# Should we skip building, i.e. loding the build system, according
+# Should we skip building, i.e. loading the build system, according
 # to the options processed?
 #
 if ! $(dont-build)
@@ -131,4 +127,3 @@ if ! $(dont-build)
     # Use last element in case of multiple command-line options
     import $(build-system[-1]) ;
 }
-
