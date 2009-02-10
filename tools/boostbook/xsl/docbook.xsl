@@ -1,12 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
    Copyright (c) 2002 Douglas Gregor <doug.gregor -at- gmail.com>
-  
+
    Distributed under the Boost Software License, Version 1.0.
    (See accompanying file LICENSE_1_0.txt or copy at
    http://www.boost.org/LICENSE_1_0.txt)
   -->
 <xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+                xmlns:xi="http://www.w3.org/2001/XInclude"
                 version="1.0">
   <xsl:include href="reference.xsl"/>
 
@@ -52,7 +53,7 @@
           <xsl:if test="not(title)">
             <title>
               <xsl:text>Reference</xsl:text>
-            </title>    
+            </title>
           </xsl:if>
 
           <xsl:if test="concept">
@@ -73,7 +74,7 @@
               </xsl:choose>
 
               <title>Concepts</title>
-              
+
               <itemizedlist>
                 <xsl:for-each select="concept">
                   <listitem>
@@ -116,7 +117,7 @@
         </title>
 
         <xsl:apply-templates select="para|section" mode="annotation"/>
-        
+
         <xsl:if test="macro">
           <xsl:call-template name="synopsis">
             <xsl:with-param name="text">
@@ -133,7 +134,7 @@
                      |descendant::typedef">
           <xsl:call-template name="synopsis">
             <xsl:with-param name="text">
-              <xsl:apply-templates mode="synopsis" 
+              <xsl:apply-templates mode="synopsis"
                 select="namespace|class|struct|union
                        |function|free-function-group
                        |overloaded-function|enum
@@ -151,7 +152,7 @@
 
   <xsl:template match="header" mode="generate.id">
     <xsl:text>header.</xsl:text>
-    <xsl:value-of select="translate(@name, '/','.')"/>
+    <xsl:value-of select="translate(@name, '/.', '._')"/>
   </xsl:template>
 
   <xsl:template match="*" mode="passthrough">
@@ -262,7 +263,7 @@
         </xsl:if>
         <xsl:if test="not($highlight)">
           <xsl:value-of select="$text"/>
-        </xsl:if>        
+        </xsl:if>
       </xsl:when>
       <xsl:otherwise>
         <xsl:message>
@@ -290,7 +291,7 @@ Error: XSL template 'link-or-anchor' called with invalid link-type '<xsl:value-o
       <refnamediv>
         <refname><xsl:value-of select="$refname"/></refname>
         <refpurpose>
-		  <xsl:apply-templates mode="annotation" select="$purpose"/>
+		  <xsl:apply-templates mode="purpose" select="$purpose"/>
 		</refpurpose>
       </refnamediv>
       <refsynopsisdiv>
@@ -339,7 +340,7 @@ Error: XSL template 'link-or-anchor' called with invalid link-type '<xsl:value-o
       <xsl:for-each select="./@*">
         <xsl:choose>
           <xsl:when test="local-name(.)='last-revision'">
-            <xsl:attribute 
+            <xsl:attribute
               name="rev:last-revision"
               namespace="http://www.cs.rpi.edu/~gregod/boost/tools/doc/revision">
               <xsl:value-of select="."/>
@@ -385,7 +386,7 @@ Error: XSL template 'link-or-anchor' called with invalid link-type '<xsl:value-o
         </xsl:attribute>
 
         <xsl:if test="@last-revision">
-          <xsl:attribute 
+          <xsl:attribute
             name="rev:last-revision"
             namespace="http://www.cs.rpi.edu/~gregod/boost/tools/doc/revision">
             <xsl:value-of select="@last-revision"/>
@@ -420,7 +421,7 @@ Error: XSL template 'link-or-anchor' called with invalid link-type '<xsl:value-o
 
   <!-- These DocBook elements have special meaning. Use the annotation mode -->
   <xsl:template match="classname|methodname|functionname|enumname|
-                       macroname|headername">
+                       macroname|headername|globalname">
     <computeroutput>
       <xsl:apply-templates select="." mode="annotation"/>
     </computeroutput>
@@ -443,7 +444,7 @@ Error: XSL template 'link-or-anchor' called with invalid link-type '<xsl:value-o
   <xsl:template match="*" mode="namespace-reference">
     <xsl:apply-templates select="." mode="reference"/>
   </xsl:template>
-  
+
   <!-- Make the various blocks immediately below a "part" be
        "chapter"-s. Must also take into account turning
        chapters within chpaters into sections. -->
@@ -460,7 +461,7 @@ Error: XSL template 'link-or-anchor' called with invalid link-type '<xsl:value-o
   <xsl:template match="part/part/partinfo|part/article/articleinfo">
     <chapterinfo><xsl:apply-templates/></chapterinfo>
   </xsl:template>
-  <xsl:template match="part/part/chapter">
+  <xsl:template match="part/part/chapter|part/part/appendix">
     <section>
       <xsl:for-each select="./@*">
         <xsl:attribute name="{name(.)}">
@@ -470,7 +471,28 @@ Error: XSL template 'link-or-anchor' called with invalid link-type '<xsl:value-o
       <xsl:apply-templates/>
     </section>
   </xsl:template>
-  <xsl:template match="part/part/chapter/chapterinfo">
+  <xsl:template match="part/part/chapter/chapterinfo|part/part/appendix/appendixinfo">
     <sectioninfo><xsl:apply-templates/></sectioninfo>
+  </xsl:template>
+
+  <!-- Header link comment to be inserted at the start of a reference page's
+       synopsis -->
+  <xsl:template name="header-link">
+    <xsl:if test="ancestor::header">
+      <xsl:call-template name="highlight-comment">
+        <xsl:with-param name="text">
+          <xsl:text>// In header: &lt;</xsl:text>
+          <xsl:call-template name="internal-link">
+            <xsl:with-param name="to">
+              <xsl:call-template name="generate.id">
+                <xsl:with-param name="node" select="ancestor::header[1]"/>
+              </xsl:call-template>
+            </xsl:with-param>
+            <xsl:with-param name="text" select="ancestor::header[1]/@name" />
+          </xsl:call-template>
+          <xsl:text>&gt;&#10;&#10;</xsl:text>
+        </xsl:with-param>
+      </xsl:call-template>
+    </xsl:if>
   </xsl:template>
 </xsl:stylesheet>
