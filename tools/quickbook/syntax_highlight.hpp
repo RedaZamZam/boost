@@ -1,5 +1,5 @@
 /*=============================================================================
-    Copyright (c) 2002 2004 Joel de Guzman
+    Copyright (c) 2002 2004 2006 Joel de Guzman
     Copyright (c) 2004 Eric Niebler
     http://spirit.sourceforge.net/
 
@@ -10,16 +10,16 @@
 #if !defined(BOOST_SPIRIT_QUICKBOOK_SYNTAX_HIGHLIGHT_HPP)
 #define BOOST_SPIRIT_QUICKBOOK_SYNTAX_HIGHLIGHT_HPP
 
-#include <boost/spirit/core.hpp>
-#include <boost/spirit/utility/confix.hpp>
-#include <boost/spirit/utility/chset.hpp>
-#include <boost/spirit/symbols/symbols.hpp>
-#include <boost/spirit/utility/escape_char.hpp>
+#include <boost/spirit/include/classic_core.hpp>
+#include <boost/spirit/include/classic_confix.hpp>
+#include <boost/spirit/include/classic_chset.hpp>
+#include <boost/spirit/include/classic_symbols.hpp>
+#include <boost/spirit/include/classic_loops.hpp>
 #include "./phrase.hpp"
 
 namespace quickbook
 {
-    using namespace boost::spirit;
+    using namespace boost::spirit::classic;
 
     // Grammar for C++ highlighting
     template <
@@ -48,7 +48,7 @@ namespace quickbook
                 program
                     =
                     *(  (+space_p)      [Space(self.out)]
-                    |   self.macro      [self.do_macro]
+                    |   macro
                     |   escape
                     |   preprocessor    [Process("preprocessor", self.out)]
                     |   comment         [Process("comment", self.out)]
@@ -58,8 +58,14 @@ namespace quickbook
                     |   string_         [Process("string", self.out)]
                     |   char_           [Process("char", self.out)]
                     |   number          [Process("number", self.out)]
-                    |   anychar_p       [Unexpected(self.out)]
+                    |   repeat_p(1)[anychar_p] [Unexpected(self.out)]
                     )
+                    ;
+
+                macro = 
+                    eps_p(self.macro                    // must not be followed by
+                        >> (eps_p - (alpha_p | '_')))   // alpha or underscore
+                    >> self.macro                       [self.do_macro]
                     ;
 
                 qbk_phrase =
@@ -68,17 +74,27 @@ namespace quickbook
                     )
                     ;
 
-                escape
-                    = str_p("``")           [PreEscape(self.escape_actions, save)]
-                    >>  (
-                            (+(anychar_p - "``") >> eps_p("``"))
-                            & qbk_phrase
+                escape =
+                    str_p("``")         [PreEscape(self.escape_actions, save)]
+                    >>
+                    (
+                        (
+                            (
+                                (+(anychar_p - "``") >> eps_p("``"))
+                                & qbk_phrase
+                            )
+                            >>  str_p("``")
                         )
-                    >> str_p("``")          [PostEscape(self.out, self.escape_actions, save)]
+                        |
+                        (
+                            eps_p       [self.escape_actions.error]
+                            >> *anychar_p
+                        )
+                    )                   [PostEscape(self.out, self.escape_actions, save)]
                     ;
 
                 preprocessor
-                    =   '#' >> ((alpha_p | '_') >> *(alnum_p | '_'))
+                    =   '#' >> *space_p >> ((alpha_p | '_') >> *(alnum_p | '_'))
                     ;
 
                 comment
@@ -110,12 +126,14 @@ namespace quickbook
                     =   +chset_p("~!%^&*()+={[}]:;,<.>?/|\\-")
                     ;
 
+                string_char = ('\\' >> anychar_p) | (anychar_p - '\\');
+
                 string_
-                    =   !as_lower_d['l'] >> confix_p('"', *c_escape_ch_p, '"')
+                    =   !as_lower_d['l'] >> confix_p('"', *string_char, '"')
                     ;
 
                 char_
-                    =   !as_lower_d['l'] >> confix_p('\'', *c_escape_ch_p, '\'')
+                    =   !as_lower_d['l'] >> confix_p('\'', *string_char, '\'')
                     ;
 
                 number
@@ -133,7 +151,8 @@ namespace quickbook
             }
 
             rule<Scanner>   program, macro, preprocessor, comment, special, string_, 
-                            char_, number, identifier, keyword, qbk_phrase, escape;
+                            char_, number, identifier, keyword, qbk_phrase, escape,
+                            string_char;
 
             symbols<> keyword_;
             phrase_grammar<EscapeActions> common;
@@ -179,7 +198,7 @@ namespace quickbook
                 program
                     =
                     *(  (+space_p)      [Space(self.out)]
-                    |   self.macro      [self.do_macro]
+                    |   macro
                     |   escape          
                     |   comment         [Process("comment", self.out)]
                     |   keyword         [Process("keyword", self.out)]
@@ -187,8 +206,14 @@ namespace quickbook
                     |   special         [Process("special", self.out)]
                     |   string_         [Process("string", self.out)]
                     |   number          [Process("number", self.out)]
-                    |   anychar_p       [Unexpected(self.out)]
+                    |   repeat_p(1)[anychar_p] [Unexpected(self.out)]
                     )
+                    ;
+
+                macro = 
+                    eps_p(self.macro                    // must not be followed by
+                        >> (eps_p - (alpha_p | '_')))   // alpha or underscore
+                    >> self.macro                       [self.do_macro]
                     ;
 
                 qbk_phrase =
@@ -197,13 +222,23 @@ namespace quickbook
                     )
                     ;
 
-                escape
-                    = str_p("``")           [PreEscape(self.escape_actions, save)]
-                    >>  (
-                            (+(anychar_p - "``") >> eps_p("``"))
-                            & qbk_phrase
+                escape =
+                    str_p("``")         [PreEscape(self.escape_actions, save)]
+                    >>
+                    (
+                        (
+                            (
+                                (+(anychar_p - "``") >> eps_p("``"))
+                                & qbk_phrase
+                            )
+                            >>  str_p("``")
                         )
-                    >> str_p("``")          [PostEscape(self.out, self.escape_actions, save)]
+                        |
+                        (
+                            eps_p       [self.escape_actions.error]
+                            >> *anychar_p
+                        )
+                    )                   [PostEscape(self.out, self.escape_actions, save)]
                     ;
 
                 comment
@@ -242,16 +277,18 @@ namespace quickbook
                     =   ! string_prefix >> (long_string | short_string)
                     ;
 
+                string_char = ('\\' >> anychar_p) | (anychar_p - '\\');
+            
                 short_string
-                    =   confix_p('\'', * c_escape_ch_p, '\'') |
-                        confix_p('"', * c_escape_ch_p, '"')    
+                    =   confix_p('\'', * string_char, '\'') |
+                        confix_p('"', * string_char, '"')
                     ;
             
                 long_string
                     // Note: the "str_p" on the next two lines work around
                     // an INTERNAL COMPILER ERROR when using VC7.1
-                    =   confix_p(str_p("'''"), * lex_escape_ch_p, "'''") |
-                        confix_p(str_p("\"\"\""), * lex_escape_ch_p, "\"\"\"")
+                    =   confix_p(str_p("'''"), * string_char, "'''") |
+                        confix_p(str_p("\"\"\""), * string_char, "\"\"\"")
                     ;
                 
                 number
@@ -270,7 +307,7 @@ namespace quickbook
 
             rule<Scanner>   program, macro, comment, special, string_, string_prefix, 
                             short_string, long_string, number, identifier, keyword, 
-                            qbk_phrase, escape;
+                            qbk_phrase, escape, string_char;
 
             symbols<> keyword_;
             phrase_grammar<EscapeActions> common;
