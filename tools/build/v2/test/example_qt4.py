@@ -6,21 +6,21 @@
 #  http://www.boost.org/LICENSE_1_0.txt)
 
 #  Test the 'qt4' examples.
-from BoostBuild import Tester, List
 
-# Create a temporary working directory
-t = Tester()
+import BoostBuild
+
+t = BoostBuild.Tester()
 
 t.set_tree("../example/qt/qt4/hello")
 t.run_build_system()
-t.expect_addition(["bin/$toolset/debug/arrow"])
+t.expect_addition(["bin/$toolset/debug/threading-multi/arrow"])
 
 t.set_tree("../example/qt/qt4/moccable-cpp")
 t.run_build_system()
-t.expect_addition(["bin/$toolset/debug/main"])
+t.expect_addition(["bin/$toolset/debug/threading-multi/main"])
 
 t.set_tree("../example/qt/qt4/uic")
 t.run_build_system()
-t.expect_addition(["bin/$toolset/debug/hello"])
+t.expect_addition(["bin/$toolset/debug/threading-multi/hello"])
 
 t.cleanup()
