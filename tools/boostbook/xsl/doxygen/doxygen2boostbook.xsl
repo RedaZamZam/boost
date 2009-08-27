@@ -37,18 +37,38 @@
   <!-- The title that will be used for the BoostBook library reference emitted. 
        If left blank, BoostBook will assign a default title. -->
   <xsl:param name="boost.doxygen.reftitle" select="''"/>
-  
+
   <!-- The id used for the library-reference. By default, it is the normalized
        form of the reftitle. -->
   <xsl:param name="boost.doxygen.refid" select="''"/>
+
+  <!-- The directory into which png files corresponding to LaTeX formulas will be found. -->
+  <xsl:param name="boost.doxygen.formuladir" select="'images/'"/>
 
   <xsl:output method="xml" indent="no" standalone="yes"/>
 
   <xsl:key name="compounds-by-kind" match="compounddef" use="@kind"/>
   <xsl:key name="compounds-by-id" match="compounddef" use="@id"/>
-  <xsl:key name="inner-classes" match="compounddef[not(attribute::kind='namespace') and not(attribute::kind='file')]/innerclass" use="@refid"/>
+  <xsl:key name="members-by-id" match="memberdef" use="@id" />
 
-  <xsl:strip-space elements="briefdescription detaileddescription"/>
+  <xsl:strip-space elements="briefdescription detaileddescription inbodydescription"/>
+
+  <xsl:template name="kind-error-message">
+    <xsl:param name="message"/>
+
+    <xsl:variable name="location" select=".//location[1]" />
+    <xsl:variable name="name" select="./name" />
+
+    <xsl:message>
+      <xsl:if test="$location">
+        <xsl:value-of select="concat($location/@file, ':', $location/@line, ': ')" />
+      </xsl:if>
+      <xsl:value-of select="concat($message, ' with kind=', @kind)" />
+      <xsl:if test="$name">
+        <xsl:value-of select="concat(' (name=', $name, ') ')" />
+      </xsl:if>
+    </xsl:message>
+  </xsl:template>
 
   <!-- translate-name: given a string, return a string suitable for use as a refid -->
   <xsl:template name="translate-name">
@@ -98,6 +118,7 @@
            tell us what is \internal and what isn't. -->
       <xsl:when test="contains(detaileddescription/para, 'INTERNAL ONLY')"/>
       <xsl:when test="contains(briefdescription/para, 'INTERNAL ONLY')"/>
+      <xsl:when test="contains(inbodydescription/para, 'INTERNAL ONLY')"/>
 
       <xsl:when test="@kind='file'">
         <xsl:call-template name="file"/>
@@ -128,9 +149,9 @@
         </xsl:call-template>
       </xsl:when>
       <xsl:otherwise>
-        <xsl:message>
-Cannot handle compounddef with kind=<xsl:value-of select="@kind"/>
-        </xsl:message>
+        <xsl:call-template name="kind-error-message">
+          <xsl:with-param name="message" select="'Cannot handle compounddef'"/>
+        </xsl:call-template>
       </xsl:otherwise>
     </xsl:choose>
   </xsl:template>
@@ -184,8 +205,8 @@ Cannot handle compounddef with kind=<xsl:value-of select="@kind"/>
     <xsl:param name="with-namespace-refs"/>
 
     <xsl:if test="contains(string(location/attribute::file), 
-                           concat('/', $in-file)) and
-                  not (key('inner-classes', @id))">
+                           concat('/', $in-file)) ">
+    
       <!-- The short name of this class -->
       <xsl:variable name="name-with-spec">
         <xsl:call-template name="strip-qualifiers">
@@ -239,6 +260,7 @@ Cannot handle compounddef with kind=<xsl:value-of select="@kind"/>
 
         <xsl:apply-templates select="briefdescription" mode="passthrough"/>
         <xsl:apply-templates select="detaileddescription" mode="passthrough"/>
+        <xsl:apply-templates select="inbodydescription" mode="passthrough"/>
         <xsl:apply-templates/>
       </xsl:element>
     </xsl:if>
@@ -264,25 +286,38 @@ Cannot handle compounddef with kind=<xsl:value-of select="@kind"/>
         
         <xsl:apply-templates select="briefdescription" mode="passthrough"/>
         <xsl:apply-templates select="detaileddescription" mode="passthrough"/>
+        <xsl:apply-templates select="inbodydescription" mode="passthrough"/>
       </enum>
     </xsl:if>
   </xsl:template>
 
   <xsl:template match="enumvalue">
-    <enumvalue>
-      <xsl:attribute name="name">
-        <xsl:value-of select="name"/>
-      </xsl:attribute>
+    <xsl:choose>
+      <!-- If the string INTERNAL ONLY is in the description, don't
+           emit this entity. This hack is necessary because Doxygen doesn't
+           tell us what is \internal and what isn't. -->
+      <xsl:when test="contains(detaileddescription/para, 'INTERNAL ONLY')"/>
+      <xsl:when test="contains(briefdescription/para, 'INTERNAL ONLY')"/>
+      <xsl:when test="contains(inbodydescription/para, 'INTERNAL ONLY')"/>
+      <xsl:otherwise>
+  
+        <enumvalue>
+          <xsl:attribute name="name">
+            <xsl:value-of select="name"/>
+          </xsl:attribute>
 
-      <xsl:if test="initializer">
-        <default>
-          <xsl:apply-templates select="initializer" mode="passthrough"/>
-        </default>
-      </xsl:if>
+          <xsl:if test="initializer">
+            <default>
+              <xsl:apply-templates select="initializer" mode="passthrough"/>
+            </default>
+          </xsl:if>
 
-      <xsl:apply-templates select="briefdescription" mode="passthrough"/>
-      <xsl:apply-templates select="detaileddescription" mode="passthrough"/>
-    </enumvalue>
+          <xsl:apply-templates select="briefdescription" mode="passthrough"/>
+          <xsl:apply-templates select="detaileddescription" mode="passthrough"/>
+          <xsl:apply-templates select="inbodydescription" mode="passthrough"/>
+        </enumvalue>
+      </xsl:otherwise>
+    </xsl:choose>
   </xsl:template>
 
   <xsl:template name="doxygen.include.header.rec">
@@ -340,9 +375,10 @@ Cannot handle compounddef with kind=<xsl:value-of select="@kind"/>
           </xsl:call-template>
         </xsl:attribute>
         
-        <xsl:if test="briefdescription/*|detaileddescription/*">
+        <xsl:if test="briefdescription/*|detaileddescription/*|inbodydescription/*">
           <xsl:apply-templates select="briefdescription/*" mode="passthrough"/>
           <xsl:apply-templates select="detaileddescription/*" mode="passthrough"/>
+          <xsl:apply-templates select="inbdoydescription/*" mode="passthrough"/>
         </xsl:if>
         
         <xsl:apply-templates mode="toplevel">
@@ -413,6 +449,16 @@ Cannot handle compounddef with kind=<xsl:value-of select="@kind"/>
     </xsl:if>
   </xsl:template>
 
+  <xsl:template match="sectiondef" mode="toplevel">
+    <xsl:param name="in-file" select="''"/>
+
+    <xsl:apply-templates mode="toplevel"
+                         select="memberdef[generate-id() =
+                                 generate-id(key('members-by-id', @id))]">
+      <xsl:with-param name="in-file" select="$in-file"/>
+    </xsl:apply-templates>
+  </xsl:template>
+
   <xsl:template match="memberdef" mode="toplevel">
     <xsl:param name="with-namespace-refs"/>
     <xsl:param name="in-file"/>
@@ -423,6 +469,7 @@ Cannot handle compounddef with kind=<xsl:value-of select="@kind"/>
            tell us what is \internal and what isn't. -->
       <xsl:when test="contains(detaileddescription/para, 'INTERNAL ONLY')"/>
       <xsl:when test="contains(briefdescription/para, 'INTERNAL ONLY')"/>
+      <xsl:when test="contains(inbodydescription/para, 'INTERNAL ONLY')"/>
 
       <xsl:when test="@kind='define'">
         <macro>
@@ -446,8 +493,31 @@ Cannot handle compounddef with kind=<xsl:value-of select="@kind"/>
 
           <xsl:apply-templates select="briefdescription" mode="passthrough"/>
           <xsl:apply-templates select="detaileddescription" mode="passthrough"/>
+          <xsl:apply-templates select="inbodydescription" mode="passthrough"/>
         </macro>
       </xsl:when>
+
+      <xsl:when test="@kind='function'">
+        <xsl:call-template name="function" />
+      </xsl:when>
+
+      <xsl:when test="@kind='typedef'">
+        <xsl:call-template name="typedef" />
+      </xsl:when>
+
+      <xsl:when test="@kind='variable'">
+        <xsl:call-template name="variable" />
+      </xsl:when>
+
+      <xsl:when test="@kind='enum'">
+        <xsl:call-template name="enum" />
+      </xsl:when>
+
+      <xsl:otherwise>
+        <xsl:call-template name="kind-error-message">
+          <xsl:with-param name="message" select="'Cannot handle toplevel memberdef element'"/>
+        </xsl:call-template>
+      </xsl:otherwise>
     </xsl:choose>
   </xsl:template>
 
@@ -495,6 +565,22 @@ Cannot handle compounddef with kind=<xsl:value-of select="@kind"/>
         <template-type-parameter>
           <xsl:attribute name="name">
             <xsl:value-of select="normalize-space(string(declname))"/>
+          </xsl:attribute>
+          <xsl:if test="defval">
+            <default>
+              <xsl:apply-templates select="defval/*|defval/text()" 
+                mode="passthrough"/>
+            </default>
+          </xsl:if>
+        </template-type-parameter>
+      </xsl:when>
+      <!-- Doxygen 1.5.8 generates odd xml for template type parameters.
+           This deals with that -->
+      <xsl:when test="not(declname) and
+        (starts-with(string(type), 'class ') or starts-with(string(type), 'typename '))">
+        <template-type-parameter>
+          <xsl:attribute name="name">
+            <xsl:value-of select="normalize-space(substring-after(string(type), ' '))"/>
           </xsl:attribute>
           <xsl:if test="defval">
             <default>
@@ -666,10 +752,16 @@ Cannot handle compounddef with kind=<xsl:value-of select="@kind"/>
       <xsl:when test="@kind='user-defined'">
         <xsl:apply-templates/>
       </xsl:when>
+      <xsl:when test="@kind=''">
+        <xsl:apply-templates select="memberdef[generate-id() =
+                                     generate-id(key('members-by-id', @id))]">
+          <xsl:with-param name="in-file" select="$in-file"/>
+        </xsl:apply-templates>
+      </xsl:when>
       <xsl:otherwise>
-        <xsl:message>
-Cannot handle sectiondef with kind=<xsl:value-of select="@kind"/>      
-        </xsl:message>
+        <xsl:call-template name="kind-error-message">
+          <xsl:with-param name="message" select="'Cannot handle sectiondef'"/>
+        </xsl:call-template>
       </xsl:otherwise>
     </xsl:choose>
   </xsl:template>
@@ -686,6 +778,7 @@ Cannot handle sectiondef with kind=<xsl:value-of select="@kind"/>
            tell us what is \internal and what isn't. -->
       <xsl:when test="contains(detaileddescription/para, 'INTERNAL ONLY')"/>
       <xsl:when test="contains(briefdescription/para, 'INTERNAL ONLY')"/>
+      <xsl:when test="contains(inbodydescription/para, 'INTERNAL ONLY')"/>
 
       <xsl:when test="@kind='typedef'">
         <xsl:call-template name="typedef">
@@ -751,9 +844,9 @@ Cannot handle sectiondef with kind=<xsl:value-of select="@kind"/>
         </xsl:call-template>
       </xsl:when>
       <xsl:otherwise>
-        <xsl:message>
-Cannot handle memberdef element with kind=<xsl:value-of select="@kind"/>
-        </xsl:message>
+        <xsl:call-template name="kind-error-message">
+          <xsl:with-param name="message" select="'Cannot handle memberdef element'"/>
+        </xsl:call-template>
       </xsl:otherwise>
     </xsl:choose>
   </xsl:template>
@@ -773,6 +866,7 @@ Cannot handle memberdef element with kind=<xsl:value-of select="@kind"/>
         
         <xsl:apply-templates select="briefdescription" mode="passthrough"/>
         <xsl:apply-templates select="detaileddescription" mode="passthrough"/>
+        <xsl:apply-templates select="inbodydescription" mode="passthrough"/>
         
         <type><xsl:apply-templates select="type"/></type>
       </typedef>
@@ -811,7 +905,7 @@ Cannot handle memberdef element with kind=<xsl:value-of select="@kind"/>
         <xsl:value-of select="normalize-space(declname/text())"/>
       </xsl:variable>
 
-      <xsl:apply-templates select="../detaileddescription//parameterlist[attribute::kind='param']/*"
+      <xsl:apply-templates select="../*[self::detaileddescription or self::inbodydescription]//parameterlist[attribute::kind='param']/*"
         mode="parameter.description">
         <xsl:with-param name="name">
           <xsl:value-of select="$name"/>
@@ -861,24 +955,25 @@ Cannot handle memberdef element with kind=<xsl:value-of select="@kind"/>
     <!-- The description -->
     <xsl:apply-templates select="briefdescription" mode="passthrough"/>
     <xsl:apply-templates select="detaileddescription" mode="passthrough"/>
+    <xsl:apply-templates select="inbodydescription" mode="passthrough"/>
       
     <xsl:apply-templates 
-      select="detaileddescription/para/simplesect[@kind='pre']"
+      select="*[self::detaileddescription or self::inbodydescription]/para/simplesect[@kind='pre']"
       mode="function-clauses"/>
     <xsl:apply-templates 
-      select="detaileddescription/para/simplesect[@kind='post']"
+      select="*[self::detaileddescription or self::inbodydescription]/para/simplesect[@kind='post']"
       mode="function-clauses"/>
     <xsl:apply-templates 
-      select="detaileddescription/para/simplesect[@kind='return']"
+      select="*[self::detaileddescription or self::inbodydescription]/para/simplesect[@kind='return']"
       mode="function-clauses"/>
-    <xsl:if test="detaileddescription/para/parameterlist[@kind='exception']">
+    <xsl:if test="*[self::detaileddescription or self::inbodydescription]/para/parameterlist[@kind='exception']">
       <throws>
         <xsl:apply-templates 
-          select="detaileddescription/para/parameterlist[@kind='exception']"
+          select="*[self::detaileddescription or self::inbodydescription]/para/parameterlist[@kind='exception']"
           mode="function-clauses"/>
       </throws>
     </xsl:if>
-    <xsl:variable name="notes" select="detaileddescription/para/simplesect[@kind='note' or @kind='attention']"/>
+    <xsl:variable name="notes" select="*[self::detaileddescription or self::inbodydescription]/para/simplesect[@kind='note' or @kind='attention']"/>
     <xsl:if test="count($notes) &gt; 0"> 
       <notes>
         <xsl:apply-templates select="$notes" mode="function-clauses"/>
@@ -1088,6 +1183,7 @@ Cannot handle memberdef element with kind=<xsl:value-of select="@kind"/>
 
       <xsl:apply-templates select="briefdescription" mode="passthrough"/>
       <xsl:apply-templates select="detaileddescription" mode="passthrough"/>
+      <xsl:apply-templates select="inbodydescription" mode="passthrough"/>
     </data-member>
     </xsl:if>
   </xsl:template>
@@ -1150,6 +1246,14 @@ Cannot handle memberdef element with kind=<xsl:value-of select="@kind"/>
     </xsl:if>
   </xsl:template>
 
+  <xsl:template match="inbodydescription" mode="passthrough">
+    <xsl:if test="text()|*">
+      <description>
+        <xsl:apply-templates mode="passthrough"/>
+      </description>
+    </xsl:if>
+  </xsl:template>
+
   <!-- Handle function clauses -->
   <xsl:template match="simplesect" mode="function-clauses">
     <xsl:if test="@kind='pre'">
@@ -1176,12 +1280,12 @@ Cannot handle memberdef element with kind=<xsl:value-of select="@kind"/>
     <xsl:if test="@kind='exception'">
       <simpara>
         <xsl:choose>
-          <xsl:when test="normalize-space(.//parametername/text())='nothrow'">
+          <xsl:when test="normalize-space(.//parametername//text())='nothrow'">
             <xsl:text>Will not throw.</xsl:text>
           </xsl:when>
           <xsl:otherwise>
             <classname>
-              <xsl:value-of select=".//parametername/text()"/>
+              <xsl:value-of select=".//parametername//text()"/>
             </classname>
             <xsl:text> </xsl:text>
             <xsl:apply-templates 
@@ -1328,4 +1432,66 @@ Cannot handle memberdef element with kind=<xsl:value-of select="@kind"/>
     <xsl:apply-templates select="*|text()" mode="passthrough"/>
   </xsl:template>
 
+  <!--
+  Eric Niebler: Jan-8-2008
+  Here is some 3/4-baked support for LaTeX formulas in
+  Doxygen comments. Doxygen doesn't generate the PNG files
+  when outputting XML. In order to use this code, you must
+  run Doxygen first to generate HTML (and the PNG files for
+  the formulas). You can do this in a Jamfile with 
+  "doxygen foo.html : <sources, etc...> ; ", where the ".html"
+  is significant. Then the png files should be copied into the 
+  images/ directory (or another place relative to the html/
+  directory, as specified by $boost.doxygen.formuladir XSL
+  parameter). This can be done with a custom action in a 
+  Jamfile. Finally, the docs can be built as normal.
+  See libs/accumulators/doc/Jamfile.v2 for a working example.
+  -->
+  <xsl:template match="formula" mode="passthrough">
+    <xsl:choose>
+      <xsl:when test="substring(*|text(), 1, 2) = '\['">
+        <equation>
+          <title/>
+          <alt>
+            <xsl:value-of select="*|text()"/>
+          </alt>
+          <mediaobject>
+            <imageobject role="html">
+              <imagedata format="PNG" align="center">
+                <xsl:attribute name="fileref">
+                  <xsl:value-of select="concat(concat(concat($boost.doxygen.formuladir, 'form_'), @id), '.png')"/>
+                </xsl:attribute>
+              </imagedata>
+            </imageobject>
+            <textobject role="tex">
+              <phrase>
+                <xsl:value-of select="*|text()"/>
+              </phrase>
+            </textobject>
+          </mediaobject>
+        </equation>
+      </xsl:when>
+      <xsl:otherwise>
+        <inlineequation>
+          <alt>
+            <xsl:value-of select="*|text()"/>
+          </alt>
+          <inlinemediaobject>
+            <imageobject role="html">
+              <imagedata format="PNG">
+                <xsl:attribute name="fileref">
+                  <xsl:value-of select="concat(concat(concat($boost.doxygen.formuladir, 'form_'), @id), '.png')"/>
+                </xsl:attribute>
+              </imagedata>
+            </imageobject>
+            <textobject role="tex">
+              <phrase>
+                <xsl:value-of select="*|text()"/>
+              </phrase>
+            </textobject>
+          </inlinemediaobject>
+        </inlineequation>
+      </xsl:otherwise>
+    </xsl:choose>
+  </xsl:template>
  </xsl:stylesheet>
