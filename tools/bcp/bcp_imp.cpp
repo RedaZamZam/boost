@@ -18,7 +18,7 @@
 #include <string>
 
 bcp_implementation::bcp_implementation()
-  : m_list_mode(false), m_list_summary_mode(false), m_license_mode(false), m_cvs_mode(false), m_unix_lines(false), m_scan_mode(false), m_bsl_convert_mode(false), m_bsl_summary_mode(false)
+  : m_list_mode(false), m_list_summary_mode(false), m_license_mode(false), m_cvs_mode(false), m_svn_mode(false), m_unix_lines(false), m_scan_mode(false), m_bsl_convert_mode(false), m_bsl_summary_mode(false)
 {
 }
 
@@ -44,6 +44,11 @@ void bcp_implementation::enable_summary_list_mode()
 void bcp_implementation::enable_cvs_mode()
 {
    m_cvs_mode = true;
+}
+
+void bcp_implementation::enable_svn_mode()
+{
+   m_svn_mode = true;
 }
 
 void bcp_implementation::enable_scan_mode()
@@ -73,7 +78,8 @@ void bcp_implementation::enable_unix_lines()
 
 void bcp_implementation::set_boost_path(const char* p)
 {
-   m_boost_path = fs::path(p, fs::native);
+   // Hack to strip trailing slashes from the path 
+   m_boost_path = (fs::path(p, fs::native) / "boost").parent_path(); 
    fs::path check = m_boost_path / "boost" / "version.hpp";
    if(!fs::exists(check))
    {
@@ -120,11 +126,23 @@ int bcp_implementation::run()
       std::runtime_error e(msg);
       boost::throw_exception(e);
    }
+   //
+   // Check Boost path is OK if it hasn't been checked already:
+   //
+   if(m_boost_path == "")
+   {
+      set_boost_path("");
+   }
    // start by building a list of permitted files
    // if m_cvs_mode is true:
    if(m_cvs_mode)
    {
+      std::cerr << "CAUTION: Boost is no longer in CVS, cvs mode may not work anymore!!!" << std::endl;
       scan_cvs_path(fs::path());
+   }
+   if(m_svn_mode)
+   {
+      scan_svn_path(fs::path());
    }
    //
    // if in license mode, try to load more/blanket_permission.txt
