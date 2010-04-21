@@ -13,24 +13,28 @@ stage html
     :
     ../../../LICENSE_1_0.txt
     ../../../boost.png
-    ../../../doc/html/boostbook.css
+    ../../../doc/src/boostbook.css
     ;
 
 stage html/images
     :
-    [ path.glob ../../../doc/html/images : *.png ]
+    [ path.glob ../../../doc/src/images : *.png ]
     ;
 
 boostbook standalone
     :
         bjam
     :
-        <format>html
+        #<format>html
         <name>html
         <dependency>html
         <dependency>html/images
         <xsl:param>boost.root=.
+        -<xsl:param>boost.defaults=Boost
         <xsl:param>nav.layout=none
+        <xsl:param>boost.image=Boost
+        <format>html:<xsl:param>admon.graphics.path=images/
+        <format>html:<xsl:param>navig.graphics.path=images/
     ;
 
 # Copyright Rene Rivera 2005-2006. Use, modification, and distribution are

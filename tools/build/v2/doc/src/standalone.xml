@@ -11,10 +11,10 @@
   <xi:include href="howto.xml"/>
   <xi:include href="install.xml"/>
   <xi:include href="tutorial.xml"/>
-  <xi:include href="advanced.xml"/>
+  <xi:include href="overview.xml"/>
   <xi:include href="tasks.xml"/>
-  <xi:include href="extending.xml"/>
   <xi:include href="reference.xml"/>
+  <xi:include href="extending.xml"/>
   <xi:include href="faq.xml"/>
 
   <!-- Appendicies -->
@@ -26,5 +26,7 @@
   </appendix>    
 
   <xi:include href="v1_vs_v2.xml"/>
+  
+  <index/>
 
 </book>
