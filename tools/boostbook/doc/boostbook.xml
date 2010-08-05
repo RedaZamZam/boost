@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <!--
    Copyright (c) 2002 Douglas Gregor <doug.gregor -at- gmail.com>
   
@@ -24,16 +24,10 @@
     </copyright>
 
     <legalnotice>
-      <para>Permission to copy, use, sell and distribute this software
-      is granted provided this copyright notice appears in all copies.
-      Permission to modify the code and to distribute modified code is
-      granted provided this copyright notice appears in all copies,
-      and a notice that the code was modified is included with the
-      copyright notice. </para>
-
-      <para> This software is provided "as is" without express or
-      implied warranty, and with no claim as to its suitability for
-      any purpose. </para> 
+      <para>Distributed under the Boost Software License, Version 1.0.
+      (See accompanying file LICENSE_1_0.txt or copy at
+      <ulink url="http://www.boost.org/LICENSE_1_0.txt">http://www.boost.org/LICENSE_1_0.txt</ulink>).
+      </para>
     </legalnotice>
   </partinfo>
 
@@ -106,8 +100,8 @@ std::cout &lt;&lt; f(5, 3) &gt;&gt; std::endl;
         <itemizedlist>
           <listitem>Windows with <ulink
                        url="http://www.cygwin.com/">Cygwin</ulink>: select the libxml2 and libxslt packages.</listitem>
-          <listitem>Windows without Cygwin: Download packages <ulink url="http://www.meta-comm.com/engineering/boost/xsltproc-win32.zip">
-              here</ulink>.</listitem>
+          <listitem>Windows without Cygwin: Download the <ulink url="http://www.zlatkovic.com/pub/libxml/">binary packages</ulink>
+            from Igor Zlatkovic. At the very least, you'll need iconv, zlib, libxml2 and libxslt.</listitem>
           <listitem>Mac OS X with Fink: Get the <code>libxslt</code> package.</listitem>
           <listitem>Mac OS X without Fink: <ulink url="http://www.zveno.com/open_source/libxml2xslt.html">Download the libxslt binaries</ulink></listitem>
           <listitem>Any platform: <ulink
@@ -127,7 +121,11 @@ std::cout &lt;&lt; f(5, 3) &gt;&gt; std::endl;
       download the required DocBook stylesheets, DocBook DTD, and
       (when Java is enabled) Apache FOP for PDF output. It will then
       configure Boost.Build version 2 to build BoostBook
-      documentation. To perform the installation, execute the
+      documentation.</para>
+      
+      <para>The script requires: <command>sh</command>,
+      <command>curl</command> and <command>gunzip</command>.
+      To perform the installation, execute the
       script <command>tools/boostbook/setup_boostbook.sh</command>
       from a directory where you would like the resulting XSL, DTD,
       and Apache FOP installations to occur. </para>
@@ -137,7 +135,7 @@ std::cout &lt;&lt; f(5, 3) &gt;&gt; std::endl;
       <title>Manual setup for all systems</title>
     
       <para>This section describes how to manually configure Boost
-      Boost version 2 (BBv2) for BoostBook. If you can use the
+      Boost version 2 (BBv@) for BoostBook. If you can use the
       automatic setup script, you should. All configuration will
       happen in the BBv2 user configuration file,
       <filename>user-config.jam</filename>. If you do not have a copy
@@ -186,7 +184,7 @@ std::cout &lt;&lt; f(5, 3) &gt;&gt; std::endl;
 
           <listitem><para>The DocBook DTD, available as a ZIP archive
           at the <ulink
-          url="http://www.oasis-open.org/docbook/xml/4.2/index.1.shtml">OASIS
+          url="http://www.oasis-open.org/docbook/xml/4.2/">OASIS
           DocBook site</ulink>. The package is called "DocBook XML
           4.2". Extract the DocBook DTD to a directory on your hard
           disk (which we'll refer to as the
@@ -214,11 +212,7 @@ using boostbook
         class="directory">$BOOST_ROOT/libs/function/doc</filename> and
         run the command <code>bjam</code>: it should produce HTML
         documentation for the Boost.Function library in the
-        <code>html</code> subdirectory. This documentation 
-	will look a little strange, because the BoostBook stylesheet is 
-	missing. You can copy the <code>boostbook.css</code> stylesheet from
-	<filename class="directory">$BOOST_ROOT/doc/html</filename> to
-	fix this problem.</para>
+        <code>html</code> subdirectory.</para>
       </section>
 
       <section id="boostbook.setup.doxygen">
@@ -293,7 +287,7 @@ using fop : FOP_COMMAND
 
       <para>To test PDF generation, switch to the directory <filename
       class="directory">$BOOST_ROOT/libs/function/doc</filename> and
-      execute the command <command>bjam --v2 pdf</command>. In the
+      execute the command <command>bjam pdf</command>. In the
       absence of any errors, Apache FOP will be executed to transform
       the XSL:FO output of DocBook into a PDF file.</para>
     </section>
@@ -306,8 +300,8 @@ using fop : FOP_COMMAND
     documentation. First, change to the directory
     <code>$BOOST_ROOT/doc</code> and remove (or make writable) the
     <code>.html</code> files in
-    <code>$BOOST_ROOT/doc/html</code>. Then, run <code>bjam
-    --v2</code> to build HTML documentation. You should see several
+    <code>$BOOST_ROOT/doc/html</code>. Then, run <code>bjam</code>
+    to build HTML documentation. You should see several
     warnings like these while DocBook documentation is being built
     from BoostBook documentation:</para>
 
@@ -322,12 +316,12 @@ Cannot find function named 'next'</programlisting>
     documentation for Boost will be available in
     <code>$BOOST_ROOT/doc/html</code>. You can also create HTML
     documentation in a single (large!) HTML file with the command line
-    <code>bjam --v2 onehtml</code>, or Unix man pages with the command
-    line <code>bjam --v2 man</code>. The complete list of output
+    <code>bjam onehtml</code>, or Unix man pages with the command
+    line <code>bjam man</code>. The complete list of output
     formats is listed in <xref
     linkend="boostbook.output.formats"/>. Several output formats can
     be passed to a single invocation of <code>bjam</code>, e.g.,
-    <code>bjam --v2 html man docbook</code> would generate HTML
+    <code>bjam html man docbook</code> would generate HTML
     (multiple files), man pages, and DocBook documentation.</para>
    
     <table id="boostbook.output.formats">
