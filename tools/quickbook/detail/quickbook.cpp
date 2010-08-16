@@ -1,5 +1,5 @@
 /*=============================================================================
-    Copyright (c) 2002 2004 Joel de Guzman
+    Copyright (c) 2002 2004 2006 Joel de Guzman
     Copyright (c) 2004 Eric Niebler
     http://spirit.sourceforge.net/
 
@@ -7,12 +7,14 @@
     License, Version 1.0. (See accompanying file LICENSE_1_0.txt or copy at
     http://www.boost.org/LICENSE_1_0.txt)
 =============================================================================*/
+#include "./quickbook.hpp"
+#include "./actions_class.hpp"
 #include "../block.hpp"
 #include "../doc_info.hpp"
 #include "./post_process.hpp"
-#include "utils.hpp"
-#include "actions.hpp"
-#include <boost/spirit/iterator/position_iterator.hpp>
+#include "./utils.hpp"
+#include "./input_path.hpp"
+#include <boost/spirit/include/classic_iterator.hpp>
 #include <boost/program_options.hpp>
 #include <boost/filesystem/path.hpp>
 #include <boost/filesystem/operations.hpp>
@@ -21,62 +23,98 @@
 #include <stdexcept>
 #include <fstream>
 #include <iostream>
-#include <sstream>
+#include <vector>
 
 #if (defined(BOOST_MSVC) && (BOOST_MSVC <= 1310))
 #pragma warning(disable:4355)
 #endif
 
-#define QUICKBOOK_VERSION "Quickbook Version 1.3"
+#define QUICKBOOK_VERSION "Quickbook Version 1.5.2"
 
 namespace quickbook
 {
-    using namespace boost::spirit;
+    using namespace boost::spirit::classic;
     namespace fs = boost::filesystem;
     tm* current_time; // the current time
     tm* current_gm_time; // the current UTC time
     bool debug_mode; // for quickbook developers only
-    unsigned qbk_major_version = 0;
-    unsigned qbk_minor_version = 0;
+    int qbk_major_version = -1;
+    int qbk_minor_version = -1;
     unsigned qbk_version_n = 0; // qbk_major_version * 100 + qbk_minor_version
     bool ms_errors = false; // output errors/warnings as if for VS
+    std::vector<std::string> include_path;
+    std::vector<std::string> preset_defines;
 
     ///////////////////////////////////////////////////////////////////////////
     //
-    //  Load a file
+    //  Parse the macros passed as command line parameters
     //
     ///////////////////////////////////////////////////////////////////////////
-    static int
-    load(char const* filename, file_storage& storage)
+    template <typename Actions>
+    struct command_line_grammar
+        : public grammar<command_line_grammar<Actions> >
     {
-        using std::cerr;
-        using std::endl;
-        using std::ios;
-        using std::ifstream;
-        using std::istream_iterator;
+        command_line_grammar(Actions& actions)
+            : actions(actions) {}
 
-        ifstream in(filename, std::ios_base::in);
-
-        if (!in)
+        template <typename Scanner>
+        struct definition
         {
-            detail::outerr(filename,1)
-                << "Could not open input file." << endl;
-            return 1;
+            definition(command_line_grammar const& self)
+                : unused(false), common(self.actions, unused)
+            {
+                Actions& actions = self.actions;
+
+                macro =
+                        *space_p
+                    >>  macro_identifier            [actions.macro_identifier]
+                    >>  *space_p
+                    >>  (   '='
+                        >>  *space_p
+                        >>  phrase                  [actions.macro_definition]
+                        >>  *space_p
+                        )
+                    |   eps_p                       [actions.macro_definition]
+                    ;
+
+                macro_identifier =
+                    +(anychar_p - (space_p | ']'))
+                    ;
+
+                phrase =
+                   *(   common
+                    |   (anychar_p - ']')           [actions.plain_char]
+                    )
+                    ;
+            }
+
+            bool unused;
+            rule<Scanner> macro, macro_identifier, phrase;
+            phrase_grammar<Actions> common;
+
+            rule<Scanner> const&
+            start() const { return macro; }
+        };
+
+        Actions& actions;
+    };
+
+    static void set_macros(actions& actor)
+    {
+        quickbook::command_line_grammar<actions> grammar(actor);
+
+        for(std::vector<std::string>::const_iterator
+                it = preset_defines.begin(),
+                end = preset_defines.end();
+                it != end; ++it)
+        {
+            typedef position_iterator<std::string::const_iterator> iterator_type;
+            iterator_type first(it->begin(), it->end(), "command line parameter");
+            iterator_type last(it->end(), it->end());
+
+            parse(first, last, grammar);
+            // TODO: Check result?
         }
-
-        // Turn off white space skipping on the stream
-        in.unsetf(ios::skipws);
-
-        std::copy(
-            istream_iterator<char>(in),
-            istream_iterator<char>(),
-            std::back_inserter(storage));
-
-        //  ensure that we have enough trailing newlines to eliminate
-        //  the need to check for end of file in the grammar.
-        storage.push_back('\n');
-        storage.push_back('\n');
-        return 0;
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -91,12 +129,14 @@ namespace quickbook
         using std::vector;
         using std::string;
 
-        file_storage storage;
-        int err = quickbook::load(filein_, storage);
-        if (err != 0)
+        std::string storage;
+        int err = detail::load(filein_, storage);
+        if (err != 0) {
+            ++actor.error_count;
             return err;
+        }
 
-        typedef position_iterator<file_storage::const_iterator> iterator_type;
+        typedef position_iterator<std::string::const_iterator> iterator_type;
         iterator_type first(storage.begin(), storage.end(), filein_);
         iterator_type last(storage.end(), storage.end());
 
@@ -120,21 +160,29 @@ namespace quickbook
             file_position const pos = info.stop.get_position();
             detail::outerr(pos.file,pos.line)
                 << "Syntax Error near column " << pos.column << ".\n";
-            return 1;
+            ++actor.error_count;
         }
 
-        return 0;
+        return actor.error_count ? 1 : 0;
     }
 
     static int
-        parse(char const* filein_, fs::path const& outdir, std::ostream& out, bool ignore_docinfo = false)
+    parse(char const* filein_, fs::path const& outdir, string_stream& out, bool ignore_docinfo = false)
     {
         actions actor(filein_, outdir, out);
+        set_macros(actor);
         bool r = parse(filein_, actor);
-        if (actor.level != 0)
-            detail::outwarn(filein_,1)
+        if (actor.section_level != 0)
+            detail::outwarn(filein_)
                 << "Warning missing [endsect] detected at end of file."
                 << std::endl;
+
+        if(actor.error_count)
+        {
+            detail::outerr(filein_)
+                << "Error count: " << actor.error_count << ".\n";
+        }
+
         return r;
     }
 
@@ -148,21 +196,23 @@ namespace quickbook
     {
         int result = 0;
         std::ofstream fileout(fileout_);
-        fs::path outdir = fs::path(fileout_, fs::native).branch_path();
+        fs::path outdir = fs::path(fileout_).parent_path();
         if (outdir.empty())
             outdir = ".";
         if (pretty_print)
         {
-            std::stringstream buffer;
+            string_stream buffer;
             result = parse(filein_, outdir, buffer);
             if (result == 0)
             {
-                post_process(buffer.str(), fileout, indent, linewidth);
+                result = post_process(buffer.str(), fileout, indent, linewidth);
             }
         }
         else
         {
-            result = parse(filein_, outdir, fileout);
+            string_stream buffer;
+            result = parse(filein_, outdir, buffer);
+            fileout << buffer.str();
         }
         return result;
     }
@@ -176,7 +226,7 @@ namespace quickbook
 int
 main(int argc, char* argv[])
 {
-    try 
+    try
     {
         using boost::program_options::options_description;
         using boost::program_options::variables_map;
@@ -188,7 +238,7 @@ main(int argc, char* argv[])
         using boost::program_options::positional_options_description;
 
         // First thing, the filesystem should record the current working directory.
-        boost::filesystem::initial_path();
+        boost::filesystem::initial_path<boost::filesystem::path>();
 
         options_description desc("Allowed options");
         desc.add_options()
@@ -197,23 +247,25 @@ main(int argc, char* argv[])
             ("no-pretty-print", "disable XML pretty printing")
             ("indent", value<int>(), "indent spaces")
             ("linewidth", value<int>(), "line width")
-            ("input-file", value<std::string>(), "input file")
-            ("output-file", value<std::string>(), "output file")
+            ("input-file", value<quickbook::detail::input_path>(), "input file")
+            ("output-file", value<quickbook::detail::input_path>(), "output file")
             ("debug", "debug mode (for developers)")
             ("ms-errors", "use Microsoft Visual Studio style error & warn message format")
+            ("include-path,I", value< std::vector<quickbook::detail::input_path> >(), "include path")
+            ("define,D", value< std::vector<std::string> >(), "define macro")
         ;
-        
+
         positional_options_description p;
         p.add("input-file", -1);
-    
+
         variables_map vm;
         int indent = -1;
         int linewidth = -1;
         bool pretty_print = true;
         store(command_line_parser(argc, argv).options(desc).positional(p).run(), vm);
-        notify(vm);    
-    
-        if (vm.count("help")) 
+        notify(vm);
+
+        if (vm.count("help"))
         {
             std::cout << desc << "\n";
             return 0;
@@ -224,7 +276,7 @@ main(int argc, char* argv[])
             std::cout << QUICKBOOK_VERSION << std::endl;
             return 0;
         }
-    
+
         if (vm.count("ms-errors"))
             quickbook::ms_errors = true;
 
@@ -236,7 +288,7 @@ main(int argc, char* argv[])
 
         if (vm.count("linewidth"))
             linewidth = vm["linewidth"].as<int>();
-        
+
         if (vm.count("debug"))
         {
             static tm timeinfo;
@@ -261,15 +313,31 @@ main(int argc, char* argv[])
             quickbook::current_gm_time = &gmt;
             quickbook::debug_mode = false;
         }
+        
+        if (vm.count("include-path"))
+        {
+            std::vector<quickbook::detail::input_path> paths
+                = vm["include-path"].as<
+                    std::vector<quickbook::detail::input_path> >();
+            quickbook::include_path
+                = std::vector<std::string>(paths.begin(), paths.end());
+        }
+
+        if (vm.count("define"))
+        {
+            quickbook::preset_defines
+                = vm["define"].as<std::vector<std::string> >();
+        }
 
         if (vm.count("input-file"))
         {
-            std::string filein = vm["input-file"].as<std::string>();
+            std::string filein
+                = vm["input-file"].as<quickbook::detail::input_path>();
             std::string fileout;
 
             if (vm.count("output-file"))
             {
-                fileout = vm["output-file"].as<std::string>();
+                fileout = vm["output-file"].as<quickbook::detail::input_path>();
             }
             else
             {
@@ -280,24 +348,27 @@ main(int argc, char* argv[])
             std::cout << "Generating Output File: "
                 << fileout
                 << std::endl;
-    
+
             return quickbook::parse(filein.c_str(), fileout.c_str(), indent, linewidth, pretty_print);
         }
         else
         {
-            quickbook::detail::outerr("",0) << "Error: No filename given" << std::endl;
-        }
+            quickbook::detail::outerr("") << "Error: No filename given\n\n"
+                << desc << std::endl;
+            return 1;
+        }        
     }
-    
-    catch(std::exception& e) 
+
+    catch(std::exception& e)
     {
-        quickbook::detail::outerr("",0) << "Error: " << e.what() << "\n";
+        quickbook::detail::outerr("") << "Error: " << e.what() << "\n";
         return 1;
     }
 
-    catch(...) 
+    catch(...)
     {
-        quickbook::detail::outerr("",0) << "Error: Exception of unknown type caught\n";
+        quickbook::detail::outerr("") << "Error: Exception of unknown type caught\n";
+        return 1;
     }
 
     return 0;

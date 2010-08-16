@@ -1,5 +1,5 @@
 /*=============================================================================
-    Copyright (c) 2002 2004 Joel de Guzman
+    Copyright (c) 2002 2004 2006 Joel de Guzman
     Copyright (c) 2004 Eric Niebler
     http://spirit.sourceforge.net/
 
@@ -11,16 +11,15 @@
 #define BOOST_SPIRIT_QUICKBOOK_DOC_INFO_HPP
 
 #include "./phrase.hpp"
-#include <boost/spirit/core.hpp>
-#include <boost/spirit/actor.hpp>
-#include <boost/spirit/utility/loops.hpp>
-#include <boost/spirit/symbols/symbols.hpp>
+#include "./detail/quickbook.hpp"
+#include <boost/spirit/include/classic_core.hpp>
+#include <boost/spirit/include/classic_actor.hpp>
+#include <boost/spirit/include/classic_loops.hpp>
+#include <boost/spirit/include/classic_symbols.hpp>
 
 namespace quickbook
 {
-    using namespace boost::spirit;
-    extern unsigned qbk_major_version;
-    extern unsigned qbk_minor_version;
+    using namespace boost::spirit::classic;
 
     template <typename Actions>
     struct doc_info_grammar
@@ -66,7 +65,7 @@ namespace quickbook
                               doc_version
                             | doc_id
                             | doc_dirname
-                            | doc_copyright
+                            | doc_copyright         [push_back_a(actions.doc_copyrights, copyright)]
                             | doc_purpose           [actions.extract_doc_purpose]
                             | doc_category
                             | doc_authors
@@ -103,12 +102,12 @@ namespace quickbook
                     ;
 
                 doc_copyright =
-                        "copyright" >> hard_space
-                    >> +( repeat_p(4)[digit_p]      [push_back_a(actions.doc_copyright_years)]
+                        "copyright" >> hard_space   [clear_a(copyright.first)]
+                    >> +( repeat_p(4)[digit_p]      [push_back_a(copyright.first)]
                           >> space
                         )
                     >> space
-                    >> (*(anychar_p - ']'))         [assign_a(actions.doc_copyright_holder)]
+                    >> (*(anychar_p - ']'))         [assign_a(copyright.second)]
                     ;
 
                 doc_purpose =
@@ -118,12 +117,11 @@ namespace quickbook
 
                 doc_category =
                         "category" >> hard_space
-                    >> (*(anychar_p - ']'))         [assign_a(actions.doc_category)]
+                    >> (*(anychar_p - ']'))         [push_back_a(actions.doc_categories)]
                     ;
 
                 doc_author =
-                        space
-                    >>  '[' >> space
+                        '[' >> space
                     >>  (*(anychar_p - ','))        [assign_a(name.second)] // surname
                     >>  ',' >> space
                     >>  (*(anychar_p - ']'))        [assign_a(name.first)] // firstname
@@ -131,10 +129,13 @@ namespace quickbook
                     ;
 
                 doc_authors =
-                        "authors" >> hard_space
-                    >> doc_author                   [push_back_a(actions.doc_authors, name)]
-                    >> *(   ','
-                            >>  doc_author          [push_back_a(actions.doc_authors, name)]
+                        "authors"
+                    >>  hard_space
+                    >>  doc_author                  [push_back_a(actions.doc_authors, name)]
+                    >>  space
+                    >>  *(  !(ch_p(',') >> space)
+                        >>  doc_author              [push_back_a(actions.doc_authors, name)]
+                        >>  space
                         )
                     ;
 
@@ -153,6 +154,7 @@ namespace quickbook
                     >>  (
                            str_p("c++") 
                         |  "python"
+                        |  "teletype"
                         )                           [assign_a(actions.source_mode)]
                     ;
 
@@ -165,7 +167,7 @@ namespace quickbook
                     ;
 
                 hard_space =
-                    (eps_p - (alnum_p | '_')) >> space  // must not be followed by
+                    (eps_p - (alnum_p | '_')) >> space  // must not be preceded by
                     ;                                   // alpha-numeric or underscore
 
                 phrase =
@@ -178,8 +180,10 @@ namespace quickbook
 
             bool unused;
             std::pair<std::string, std::string> name;
+            std::pair<std::vector<std::string>, std::string> copyright;
+            std::string category;
             rule<Scanner>   doc_info, doc_title, doc_version, doc_id, doc_dirname,
-                            doc_copyright, doc_purpose,doc_category, doc_authors,
+                            doc_copyright, doc_purpose, doc_category, doc_authors,
                             doc_author, comment, space, hard_space, doc_license,
                             doc_last_revision, doc_source_mode, phrase, quickbook_version;
             phrase_grammar<Actions> common;

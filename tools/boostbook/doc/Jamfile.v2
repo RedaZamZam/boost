@@ -7,5 +7,7 @@
 project boost/doc ;
 import boostbook : boostbook ;
 
-boostbook boostbook : boostbook.xml ;
+boostbook boostbook : boostbook.xml :
+    <xsl:param>boost.root=../../../..
+    ;
 
