@@ -58,6 +58,7 @@ import "class" : new ;
 import common ;
 import feature : feature ;
 import generators ;
+import os ;
 import project ;
 import property ;
 import testing ;
@@ -162,7 +163,20 @@ rule cmdline_to_features ( cmdline : unknown-features ? )
                local add = [ add_feature $(prefix) $(name) $(cmdline) ] ;
 
                if $(add) {
-                  result += $(add[1]) ;
+
+                  if $(add[1]) = <find-shared-library>pthread
+                  {
+                      # Uhm. It's not really nice that this MPI implementation
+                      # uses -lpthread as opposed to -pthread. We do want to
+                      # set <threading>multi, instead of -lpthread.
+                      result += "<threading>multi" ;
+                      MPI_EXTRA_REQUIREMENTS += "<threading>multi" ;                      
+                  }
+                  else
+                  {                      
+                      result += $(add[1]) ;                  
+                  }
+                                     
                   cmdline = $(add[2]) ;
                   matched = yes ;
                }
@@ -204,7 +218,7 @@ rule cmdline_to_features ( cmdline : unknown-features ? )
     if $(otherflags) {
        for unknown in $(unknown-features)
        {
-         result += "$(unknown)$(otherflags)" ;
+         result += "$(unknown)$(otherflags:J= )" ;
        }
     }
 
@@ -223,13 +237,44 @@ local rule safe-shell-command ( cmdline )
 # Initialize the MPI module.  
 rule init ( mpicxx ? : options * : mpirun-with-options * )
 {
-  if ! $(options)
+  if ! $(options) && $(.debug-configuration)
   {
-    if $(.debug-configuration)
+    ECHO "===============MPI Auto-configuration===============" ;
+  }
+    
+  if ! $(mpicxx) && [ os.on-windows ]
+  {  
+    # Try to auto-configure to the Microsoft Compute Cluster Pack
+    local cluster_pack_path_native = "C:\\Program Files\\Microsoft Compute Cluster Pack" ;
+    local cluster_pack_path = [ path.make $(cluster_pack_path_native) ] ;
+    if [ GLOB $(cluster_pack_path_native)\\Include : mpi.h ]
     {
-      ECHO "===============MPI Auto-configuration===============" ;
+      if $(.debug-configuration)
+      {
+        ECHO "Found Microsoft Compute Cluster Pack: $(cluster_pack_path_native)" ;
+      }
+      
+      # Pick up either the 32-bit or 64-bit library, depending on which address
+      # model the user has selected. Default to 32-bit.
+      options = <include>$(cluster_pack_path)/Include 
+                <address-model>64:<library-path>$(cluster_pack_path)/Lib/amd64
+                <library-path>$(cluster_pack_path)/Lib/i386
+                <find-static-library>msmpi
+                <toolset>msvc:<define>_SECURE_SCL=0
+              ;
+              
+      # Setup the "mpirun" equivalent (mpiexec)
+      .mpirun = "\"$(cluster_pack_path_native)\\Bin\\mpiexec.exe"\" ;
+      .mpirun_flags = -n ;
     }
-
+    else if $(.debug-configuration)
+    {
+      ECHO "Did not find Microsoft Compute Cluster Pack in $(cluster_pack_path_native)." ;
+    }
+  } 
+   
+  if ! $(options)
+  { 
     # Try to auto-detect options based on the wrapper compiler
     local command = [ common.get-invocation-command mpi : mpic++ : $(mpicxx) ] ;
 
@@ -237,6 +282,12 @@ rule init ( mpicxx ? : options * : mpirun-with-options * )
     {
       # Try "mpiCC", which is used by MPICH 
       command = [ common.get-invocation-command mpi : mpiCC ] ;
+    }
+
+    if ! $(mpicxx) && ! $(command) 
+    {
+      # Try "mpicxx", which is used by OpenMPI and MPICH2
+      command = [ common.get-invocation-command mpi : mpicxx ] ;
     }
 
     local result ;
@@ -285,6 +336,65 @@ rule init ( mpicxx ? : options * : mpirun-with-options * )
       compile_flags = [ SHELL "$(command) -compile_info" ] ;
       link_flags = [ SHELL "$(command) -link_info" ] ;
     }
+    # Sun HPC and Ibm POE
+    else if [ SHELL "$(command) -v 2>/dev/null" ]
+    {
+      compile_flags = [ SHELL "$(command) -c -v -xtarget=native64 2>/dev/null" ] ;
+
+      local back = [ MATCH "--------------------(.*)" : $(compile_flags) ] ;
+      if $(back)
+      {
+        # Sun HPC
+        if $(.debug-configuration)
+        {
+          ECHO "Found Sun MPI wrapper compiler: $(command)" ;
+        }
+
+        compile_flags = [ MATCH "(.*)--------------------" : $(back) ] ;
+        compile_flags = [ MATCH "(.*)-v" :  $(compile_flags) ] ;
+        link_flags = [ SHELL "$(command) -v -xtarget=native64 2>/dev/null" ] ;
+        link_flags = [ MATCH "--------------------(.*)" : $(link_flags) ] ;
+        link_flags = [ MATCH "(.*)--------------------" : $(link_flags) ] ;
+
+        # strip out -v from compile options
+        local front = [ MATCH "(.*)-v" :  $(link_flags) ] ;
+        local back = [ MATCH "-v(.*)" :  $(link_flags) ] ;
+        link_flags = "$(front) $(back)" ;
+        front = [ MATCH "(.*)-xtarget=native64" :  $(link_flags) ] ;
+        back = [ MATCH "-xtarget=native64(.*)" :  $(link_flags) ] ;
+        link_flags = "$(front) $(back)" ;
+      }
+      else
+      {
+        # Ibm POE
+        if $(.debug-configuration)
+        {
+          ECHO "Found IBM MPI wrapper compiler: $(command)" ;
+        }
+
+        # 
+        compile_flags = [ SHELL "$(command) -c -v 2>/dev/null" ] ;
+        compile_flags = [ MATCH "(.*)exec: export.*" : $(compile_flags) ] ;
+        local front = [ MATCH "(.*)-v" :  $(compile_flags) ] ;
+        local back = [ MATCH "-v(.*)" :  $(compile_flags) ] ;
+        compile_flags = "$(front) $(back)" ;
+        front = [ MATCH "(.*)-c" :  $(compile_flags) ] ;
+        back = [ MATCH "-c(.*)" :  $(compile_flags) ] ;
+        compile_flags = "$(front) $(back)" ;
+        link_flags = $(compile_flags) ;
+
+        # get location of mpif.h from mpxlf
+        local f_flags = [ SHELL "mpxlf -v 2>/dev/null" ] ;
+        f_flags = [ MATCH "(.*)exec: export.*" : $(f_flags) ] ;
+        front = [ MATCH "(.*)-v" :  $(f_flags) ] ;
+        back = [ MATCH "-v(.*)" :  $(f_flags) ] ;
+        f_flags = "$(front) $(back)" ;
+        f_flags = [ MATCH "xlf_r(.*)" : $(f_flags) ] ;
+        f_flags = [ MATCH "-F:mpxlf_r(.*)" : $(f_flags) ] ;
+        compile_flags = [ strip-eol $(compile_flags) ] ;
+        compile_flags = "$(compile_flags) $(f_flags)" ;
+      }
+    }
 
     if $(result) || $(compile_flags) && $(link_flags)
     {
@@ -323,8 +433,6 @@ rule init ( mpicxx ? : options * : mpirun-with-options * )
                                 : $(link_flags) ] ;
           ECHO "MPI link flags: $(match[2])" ;
         }
-        echo "MPI build features: " ;
-        ECHO $(options) ;
       }
     } 
     else 
@@ -345,17 +453,32 @@ rule init ( mpicxx ? : options * : mpirun-with-options * )
       ECHO "You will need to manually configure MPI support." ;
     }
  
-    if $(.debug-configuration)
-    {
-      ECHO "====================================================" ;
-    }
   }
 
   # Find mpirun (or its equivalent) and its flags
-  .mpirun = 
-      [ common.get-invocation-command mpi : mpirun : $(mpirun-with-options[1]) ] ;
-  .mpirun_flags = $(mpirun-with-options[2-]) ;
-  .mpirun_flags ?= -np ;
+  if ! $(.mpirun)
+  {
+    .mpirun = 
+        [ common.get-invocation-command mpi : mpirun : $(mpirun-with-options[1]) ] ;
+    .mpirun_flags = $(mpirun-with-options[2-]) ;
+    .mpirun_flags ?= -np ;
+  }
+  
+  if $(.debug-configuration)
+  {
+    if $(options)
+    {
+      echo "MPI build features: " ;
+      ECHO $(options) ;
+    }
+
+    if $(.mpirun)
+    {
+      echo "MPI launcher: $(.mpirun) $(.mpirun_flags)" ;
+    }
+        
+    ECHO "====================================================" ;
+  }
 
   if $(options)  
   {
@@ -429,6 +552,9 @@ rule capture-output ( target : sources * : properties * )
     local num_processes = [ property.select <mpi:processes> : $(properties) ] ;
     num_processes = $(num_processes:G=) ;
 
+    # serialize the MPI tests to avoid overloading systems
+    JAM_SEMAPHORE on $(target) = <s>mpi-run-semaphore ;
+
     # We launch MPI processes using the "mpirun" equivalent specified by the user.
     LAUNCHER on $(target) =  
       [ on $(target) return $(.mpirun) $(.mpirun_flags) $(num_processes) ] ;
@@ -450,7 +576,7 @@ rule mpi-test ( name : sources * : requirements * : schedule * )
     {  
       result += [ testing.make-test 
         run-mpi : $(sources) /boost/mpi//boost_mpi
-          : $(requirements) <mpi:processes>$(processes) : $(name)-$(processes) ] ;
+          : $(requirements) <toolset>msvc:<link>static <mpi:processes>$(processes) : $(name)-$(processes) ] ;
     }
     return $(result) ;
 }

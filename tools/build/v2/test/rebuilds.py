@@ -1,10 +1,8 @@
 #!/usr/bin/python
 
-# Copyright 2005 Dave Abrahams 
-# Distributed under the Boost Software License, Version 1.0. 
-# (See accompanying file LICENSE_1_0.txt or http://www.boost.org/LICENSE_1_0.txt) 
-
-# This tests the typechecking facilities.
+# Copyright 2005 Dave Abrahams
+# Distributed under the Boost Software License, Version 1.0.
+# (See accompanying file LICENSE_1_0.txt or http://www.boost.org/LICENSE_1_0.txt)
 
 import BoostBuild
 
@@ -35,6 +33,7 @@ t.run_build_system('-ffile.jam bar')
 t.expect_addition('bar')
 t.expect_nothing_more()
 
+t.wait_for_time_change_since_last_build()
 t.run_build_system('-ffile.jam foo')
 t.expect_touch('bar')
 t.expect_addition('foo')
@@ -46,7 +45,7 @@ t.expect_nothing_more()
 
 t.touch('bar')
 t.run_build_system('-ffile.jam')
-t.expect_touch(['foo', 'aux1', 'aux2', 'bar'])
+t.expect_touch(['foo', 'aux1', 'aux2'])
 t.expect_nothing_more()
 
 t.cleanup()
