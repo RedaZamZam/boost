@@ -39,6 +39,7 @@
         </xsl:call-template>
       </xsl:with-param>
       <xsl:with-param name="synopsis">
+        <xsl:call-template name="header-link"/>
         <xsl:call-template name="global-synopsis-impl">
           <xsl:with-param name="link-type" select="'none'" />
         </xsl:call-template>
@@ -56,7 +57,9 @@
       </xsl:call-template>
       <xsl:text> </xsl:text>
     </xsl:if>
-    <xsl:apply-templates select="type/*|type/text()" mode="annotation" />
+    <xsl:apply-templates select="type/*|type/text()" mode="annotation">
+      <xsl:with-param name="highlight" select="true()"/>
+    </xsl:apply-templates>
     <xsl:text> </xsl:text>
     <xsl:call-template name="link-or-anchor">
       <xsl:with-param name="to">
@@ -65,12 +68,13 @@
       <xsl:with-param name="text" select="@name" />
       <xsl:with-param name="link-type" select="$link-type" />
     </xsl:call-template>
-    <xsl:text>;</xsl:text>
+    <xsl:call-template name="highlight-text">
+      <xsl:with-param name="text" select="';'"/>
+    </xsl:call-template>
   </xsl:template>
   <xsl:template match="data-member" mode="generate.id">
-    <xsl:call-template name="fully-qualified-name">
+    <xsl:call-template name="fully-qualified-id">
       <xsl:with-param name="node" select="."/>
-      <xsl:with-param name="separator" select="'.'"/>
     </xsl:call-template>
   </xsl:template>
 </xsl:stylesheet>
