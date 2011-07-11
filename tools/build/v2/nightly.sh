@@ -16,14 +16,15 @@ export LC_ALL=C
 export LC_MESSAGES=C
 export LANG=C
 cd /tmp
-rm -rf boost-build
+rm -rf boost-build-nightly
+mkdir boost-build-nightly
 echo "Checking out sources"
-cvs -d :ext:vladimir_prus@boost.cvs.sourceforge.net:/cvsroot/boost co -P -d  boost-build boost/tools > /tmp/boost_build_checkout_log
-mv /tmp/boost_build_checkout_log boost-build/checkout-log
-cd boost-build/build/v2
+svn co http://svn.boost.org/svn/boost/trunk/tools/build/v2 boost-build-nightly/boost-build > /tmp/boost_build_checkout_log
+mv /tmp/boost_build_checkout_log boost-build-nightly/checkout-log
+cd boost-build-nightly/boost-build/
 echo "Building packages and uploading docs"
 ./roll.sh > ../roll-log 2>&1
 cd ..
 echo "Uploading packages"
-scp boost-build.zip boost-build.tar.bz2 vladimir_prus@shell.sourceforge.net:/home/groups/b/bo/boost/htdocs/boost-build2 > scp-log
+scp boost-build.zip boost-build.tar.bz2 vladimir_prus,boost@web.sourceforge.net:/home/groups/b/bo/boost/htdocs/boost-build2 > scp-log
 echo "Nightly build successful"
