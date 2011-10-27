@@ -1,5 +1,5 @@
 #==============================================================================
-#   Copyright (c) 2002 2004 Joel de Guzman
+#   Copyright (c) 2002 2004 2006 Joel de Guzman
 #   Copyright (c) 2004 Eric Niebler
 #   http://spirit.sourceforge.net/
 #
@@ -8,23 +8,11 @@
 #   http://www.boost.org/LICENSE_1_0.txt)
 #==============================================================================
 
-exe quickbook
-    :
-    detail/quickbook.cpp
-    detail/actions.cpp
-    detail/utils.cpp
-    detail/post_process.cpp
-    /boost//program_options
-    /boost//filesystem
-    : #<define>QUICKBOOK_NO_DATES
-      <toolset>msvc:<cxxflags>/wd4511
-      <toolset>msvc:<cxxflags>/wd4512
-      <toolset>msvc:<cxxflags>/wd4701
-      <toolset>msvc:<cxxflags>/wd4702
-      <toolset>msvc:<cxxflags>/wd4244
-      <toolset>msvc:<cxxflags>/wd4267
-      <toolset>msvc:<cxxflags>/wd4800
+alias quickbook
+    : src//quickbook
     ;
+
+explicit quickbook ;
 
 install dist-bin
     :
@@ -44,4 +32,14 @@ install dist-lib
     <location>../../dist/lib
     :
     release
+    ;
+
+# Target for quickbook toolset's auto build.
+
+alias quickbook-auto
+    : quickbook
+    : release
+    ;
+
+explicit quickbook-auto
     ;
