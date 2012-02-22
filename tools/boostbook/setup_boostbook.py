@@ -1,5 +1,5 @@
 #   Copyright (c) 2002 Douglas Gregor <doug.gregor -at- gmail.com>
-# 
+#
 #   Distributed under the Boost Software License, Version 1.0.
 #   (See accompanying file LICENSE_1_0.txt or copy at
 #   http://www.boost.org/LICENSE_1_0.txt)
@@ -10,11 +10,14 @@
 # right now it is used only be release scripts
 
 # User configuration
-DOCBOOK_XSL_VERSION = "1.67.2"
+# (MAINTANERS: please, keep in synch with setup_boostbook.sh)
+DOCBOOK_XSL_VERSION = "1.75.2"
 DOCBOOK_DTD_VERSION = "4.2"
-FOP_VERSION = "0.20.5"
-FOP_MIRROR = "http://mirrors.ibiblio.org/pub/mirrors/apache/xmlgraphics/fop/"
-SOURCEFORGE_MIRROR = "http://puzzle.dl.sourceforge.net"
+FOP_VERSION = "0.94"
+FOP_JDK_VERSION="1.4"
+# FOP_MIRROR = "http://mirrors.ibiblio.org/pub/mirrors/apache/xmlgraphics/fop/binaries"
+FOP_MIRROR = "http://archive.apache.org/dist/xmlgraphics/fop/binaries/"
+SOURCEFORGE_DOWNLOAD = "http://sourceforge.net/projects/docbook/files"
 
 # No user configuration below this point-------------------------------------
 
@@ -40,7 +43,7 @@ def accept_args( args ):
     ( options, args ) = parser.parse_args( args )
     if options.tools is None:
         options.tools = os.getcwd()
-    
+
 
     return options.tools
 
@@ -48,7 +51,7 @@ def to_posix( path ):
     return path.replace( "\\", "/" )
 
 def unzip( archive_path, result_dir ):
-    z = zipfile.ZipFile( archive_path, 'r', zipfile.ZIP_DEFLATED ) 
+    z = zipfile.ZipFile( archive_path, 'r', zipfile.ZIP_DEFLATED )
     for f in z.infolist():
         print f.filename
         if not os.path.exists( os.path.join( result_dir, os.path.dirname( f.filename ) ) ):
@@ -56,11 +59,11 @@ def unzip( archive_path, result_dir ):
         result = open( os.path.join( result_dir, f.filename ), 'wb' )
         result.write( z.read( f.filename ) )
         result.close()
- 
+
     z.close()
 
 def gunzip( archive_path, result_dir ):
-    tar = tarfile.open( archive_path, 'r:gz' ) 
+    tar = tarfile.open( archive_path, 'r:gz' )
     for tarinfo in tar:
         tar.extract( tarinfo, result_dir )
     tar.close()
@@ -143,12 +146,12 @@ def adjust_user_config( config_file
     except OSError, e:
         os.unlink( config_file )
         os.rename( config_file + ".tmp", config_file )
-        
+
 
 def setup_docbook_xsl( tools_directory ):
     print "DocBook XSLT Stylesheets ..."
     DOCBOOK_XSL_TARBALL = os.path.join( tools_directory, "docbook-xsl-%s.tar.gz" % DOCBOOK_XSL_VERSION )
-    DOCBOOK_XSL_URL     = "%s/sourceforge/docbook/%s" % ( SOURCEFORGE_MIRROR, os.path.basename( DOCBOOK_XSL_TARBALL ) )
+    DOCBOOK_XSL_URL     = "%s/docbook-xsl/%s/%s/download" % (SOURCEFORGE_DOWNLOAD, DOCBOOK_XSL_VERSION, os.path.basename( DOCBOOK_XSL_TARBALL ) )
 
     if os.path.exists( DOCBOOK_XSL_TARBALL ):
         print "    Using existing DocBook XSLT Stylesheets (version %s)." % DOCBOOK_XSL_VERSION
@@ -181,7 +184,7 @@ def setup_docbook_dtd( tools_directory ):
         print  "Expanding DocBook XML DTD into %s... " % DOCBOOK_DTD_DIR
         unzip( DOCBOOK_DTD_ZIP,  DOCBOOK_DTD_DIR )
         print "done."
-        
+
     return DOCBOOK_DTD_DIR
 
 def find_xsltproc():
@@ -206,13 +209,13 @@ def find_java():
 
 def setup_fop( tools_directory ):
     print "FOP ..."
-    FOP_TARBALL = os.path.join( tools_directory, "fop-%s-bin.tar.gz" % FOP_VERSION )
+    FOP_TARBALL = os.path.join( tools_directory, "fop-%s-bin-jdk%s.tar.gz" % ( FOP_VERSION, FOP_JDK_VERSION ) )
     FOP_URL     = "%s/%s" % ( FOP_MIRROR, os.path.basename( FOP_TARBALL ) )
     FOP_DIR     = to_posix( "%s/fop-%s" % ( tools_directory, FOP_VERSION ) )
     if sys.platform == 'win32':
         fop_driver = "fop.bat"
     else:
-        fop_driver = "fop.sh"
+        fop_driver = "fop"
 
     FOP = to_posix( os.path.join( FOP_DIR, fop_driver ) )
 
@@ -240,7 +243,7 @@ def find_user_config():
         print "    Updating Boost.Jam configuration in %s... " % JAM_CONFIG_OUT
         return JAM_CONFIG_OUT
     elif os.environ.has_key( "BOOST_ROOT" ) and os.path.exists( os.path.join( os.environ[ "BOOST_ROOT" ], "tools/build/v2/user-config.jam" ) ):
-        JAM_CONFIG_IN=os.path.join( os.environ[ "BOOST_ROOT" ], "tools/build/v2/user-config.jam" ) 
+        JAM_CONFIG_IN=os.path.join( os.environ[ "BOOST_ROOT" ], "tools/build/v2/user-config.jam" )
         print "    Found user-config.jam in BOOST_ROOT directory (%s)" % JAM_CONFIG_IN
         JAM_CONFIG_IN_TEMP="no"
         print "    Writing Boost.Jam configuration to %s... " % JAM_CONFIG_OUT
@@ -251,7 +254,7 @@ def setup_boostbook( tools_directory ):
     print "Setting up boostbook tools..."
     print "-----------------------------"
     print ""
-    
+
     DOCBOOK_XSL_DIR = setup_docbook_xsl( tools_directory )
     DOCBOOK_DTD_DIR = setup_docbook_dtd( tools_directory )
     XSLTPROC        = find_xsltproc()
@@ -264,7 +267,7 @@ def setup_boostbook( tools_directory ):
         FOP = setup_fop( tools_directory )
 
     user_config     = find_user_config()
-    
+
     # Find the input jamfile to configure
 
     if user_config is None:
@@ -286,18 +289,12 @@ def setup_boostbook( tools_directory ):
     print "Done! Execute \"bjam --v2\" in a documentation directory to generate"
     print "documentation with BoostBook. If you have not already, you will need"
     print "to compile Boost.Jam."
-    print ""
-    print "WARNING FOR WIN32: please obtain a patched version of xsltproc "
-    print "from http://engineering.meta-comm.com/xsltproc-win32.zip if you"
-    print "are running BoostBook build on Win32 system (this patched version"
-    print "solves the long-standing xsltproc problem with "
-    print "creating directories for output files)."
 
 def main():
     ( tools_directory ) = accept_args( sys.argv[ 1: ] )
     setup_boostbook( tools_directory )
-    
+
 if __name__ == "__main__":
     main()
 
-    
+
