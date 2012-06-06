@@ -1,46 +1,73 @@
 #!/usr/bin/python
 
-from BoostBuild import Tester, List
-import os
-from string import strip
+import BoostBuild
 
-t = Tester()
+t = BoostBuild.Tester()
 
-# First check some startup
-t.set_tree("direct-request-test")
+# First check some startup.
+
+t.write("jamroot.jam", "")
+
+t.write("jamfile.jam", """
+exe a : a.cpp b ;
+lib b : b.cpp ;
+""")
+
+t.write("a.cpp", """
+void
+# ifdef _WIN32
+__declspec(dllimport)
+# endif 
+foo();
+
+int main() 
+{
+    foo();
+}
+""")
+
+t.write("b.cpp", """
+#ifdef MACROS
+void
+# ifdef _WIN32
+__declspec(dllexport)
+# endif 
+foo() {}
+#endif
+
+# ifdef _WIN32
+int __declspec(dllexport) force_implib_creation;
+# endif 
+""")
+
 t.run_build_system(extra_args="define=MACROS")
-
 t.expect_addition("bin/$toolset/debug/" 
-                  * (List("a.obj b.obj b.dll a.exe")))
+                  * (BoostBuild.List("a.obj b.obj b.dll a.exe")))
 
-# When building debug version, the 'define' still applies
+
+# When building a debug version, the 'define' still applies.
 t.rm("bin")
 t.run_build_system(extra_args="debug define=MACROS")
 t.expect_addition("bin/$toolset/debug/" 
-                  * (List("a.obj b.obj b.dll a.exe")))
+                  * (BoostBuild.List("a.obj b.obj b.dll a.exe")))
 
-# When building release version, the 'define' should not
-# apply: we'll have direct build request 'release <define>MACROS'
-# and real build properties 'debug'.
-t.copy("Jamfile2", "Jamfile")
-t.copy("b_inverse.cpp", "b.cpp")
+
+# When building release version, the 'define' still applies.
+t.write("jamfile.jam", """
+exe a : a.cpp b : <variant>debug ;
+lib b : b.cpp ;
+""")
 t.rm("bin")
 t.run_build_system(extra_args="release define=MACROS")
 
 
-# Regression test: direct build request was not working
-# when there's more than one level of 'build-project'
-
+# Regression test: direct build request was not working when there was more than
+# one level of 'build-project'.
 t.rm(".")
-t.write('project-root.jam', '')
-t.write('Jamfile', 'build-project a ;')
-t.write('a/Jamfile', 'build-project b ;')
-t.write('a/b/Jamfile', '')
-
+t.write('jamroot.jam', '')
+t.write('jamfile.jam', 'build-project a ;')
+t.write('a/jamfile.jam', 'build-project b ;')
+t.write('a/b/jamfile.jam', '')
 t.run_build_system("release")
-
-
-
-
 
 t.cleanup()
