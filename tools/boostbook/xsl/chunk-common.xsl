@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!--
    Copyright (c) 2002 Douglas Gregor <doug.gregor -at- gmail.com>
-  
+
    Distributed under the Boost Software License, Version 1.0.
    (See accompanying file LICENSE_1_0.txt or copy at
    http://www.boost.org/LICENSE_1_0.txt)
@@ -10,10 +10,14 @@
                 version="1.0">
 
 <!-- Import the HTML chunking stylesheet -->
+  
+<!-- Watch out that we don't override chunk.xsl -->
+<!--
 <xsl:import
-    href="http://docbook.sourceforge.net/release/xsl/current/html/chunk-common.xsl"/>
+    href="http://docbook.sourceforge.net/release/xsl/current/html/chunk-common.xsl"/> -->
 
-<xsl:import href="relative-href.xsl"/>
+<!-- Already included in the main stylesheet -->
+<!-- <xsl:import href="relative-href.xsl"/> -->
 
 <!-- ==================================================================== -->
 
@@ -27,7 +31,8 @@
     <xsl:variable name="basename" select="substring-before( $their, $html.ext )"/>
     <xsl:choose>
         <xsl:when test="not($recursive)">
-            <xsl:value-of select="translate( $basename, '.', '/' )"/>
+            <!-- translate dots into directory separators, and replace illegal file path characters with underscores -->
+            <xsl:value-of select="translate($basename, '.&lt;&gt;\:*?&quot;|,()!+=&amp;', '/_______________' )"/>
             <xsl:value-of select="$html.ext"/>
         </xsl:when>
         <xsl:otherwise>
@@ -63,6 +68,9 @@
     </xsl:variable>
 
     <xsl:choose>
+    <xsl:when test="$navtext = 'xxx'">
+        <xsl:value-of select="$direction"/>
+    </xsl:when>
 	<xsl:when test="$navig.graphics != 0">
 	    <img>
 		<xsl:attribute name="src">
