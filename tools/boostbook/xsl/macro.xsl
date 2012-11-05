@@ -38,12 +38,51 @@
         </xsl:call-template>
       </xsl:with-param>
       <xsl:with-param name="synopsis">
+        <xsl:call-template name="header-link"/>
         <xsl:call-template name="macro-synopsis">
           <xsl:with-param name="link-type" select="'none'"/>
         </xsl:call-template>
       </xsl:with-param>
       <xsl:with-param name="text">
         <xsl:apply-templates select="description"/>
+
+        <xsl:if test="macro-parameter/description">
+          <variablelist spacing="compact">
+            <xsl:processing-instruction name="dbhtml">
+              list-presentation="table"
+            </xsl:processing-instruction>
+
+            <!-- Document parameters -->
+            <xsl:if test="macro-parameter/description">
+              <varlistentry>
+                <term>Parameters:</term>
+                <listitem>
+                  <variablelist spacing="compact">
+                    <xsl:processing-instruction name="dbhtml">
+                      list-presentation="table"
+                    </xsl:processing-instruction>
+                    <xsl:for-each select="macro-parameter">
+                      <xsl:sort select="attribute::name"/>
+                      <xsl:if test="description">
+                        <varlistentry>
+                          <term>
+                            <xsl:call-template name="monospaced">
+                              <xsl:with-param name="text" select="@name"/>
+                            </xsl:call-template>
+                          </term>
+                          <listitem>
+                            <xsl:apply-templates select="description/*"/>
+                          </listitem>
+                        </varlistentry>
+                      </xsl:if>
+                    </xsl:for-each>
+                  </variablelist>
+                </listitem>
+              </varlistentry>
+            </xsl:if>
+          </variablelist>
+        </xsl:if>
+        
       </xsl:with-param>
     </xsl:call-template>
   </xsl:template>
@@ -73,5 +112,10 @@
 
   <xsl:template match="macro" mode="generate.id">
     <xsl:value-of select="@name"/>
+    <xsl:if test="count(key('named-entities',
+        translate(@name, $uppercase-letters, $lowercase-letters)))!=1">
+      <xsl:text>_</xsl:text>
+      <xsl:value-of select="generate-id(.)"/>
+    </xsl:if>
   </xsl:template>
 </xsl:stylesheet>
